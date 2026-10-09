@@ -1,0 +1,62 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+
+<head>
+    <meta charset="UTF-8">
+    <link rel="stylesheet" href="popup.css">
+</head>
+
+<body>
+    <div class="card">
+        <header class="header">
+            <div class="logo">Apura<span>Web</span></div>
+            <span class="tag">ApuraWeb</span>
+        </header>
+
+        <main class="content">
+            <button id="analyze-btn" class="btn btn-primary">
+                Analisar Página Atual
+            </button>
+
+            <!-- Estado de Carregamento -->
+            <div id="loading" class="state-container hidden">
+                <div class="spinner"></div>
+                <p>Analisando conteúdo com IA...</p>
+            </div>
+
+            <!-- Exibição de Erro -->
+            <div id="error-box" class="state-container error-box hidden">
+                <p id="error-message">Erro ao processar requisição.</p>
+            </div>
+
+            <!-- Resumo Simplificado do Resultado -->
+            <div id="result-box" class="state-container hidden">
+                <div class="badge" id="verdict-badge">Resultado</div>
+                <h3 id="verdict-title">Verídico</h3>
+                <p class="score-text">Confiabilidade: <strong id="verdict-score">0%</strong></p>
+                <p class="summary-text" id="verdict-summary"></p>
+
+                <button id="open-modal-btn" class="btn btn-secondary">
+                    Ver Detalhes Completos
+                </button>
+            </div>
+        </main>
+    </div>
+
+    <!-- Modal com Resultado Completo -->
+    <div id="modal" class="modal hidden">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h2>Detalhamento da Análise</h2>
+                <span id="close-modal" class="close">&times;</span>
+            </div>
+            <div class="modal-body">
+                <pre id="modal-json"></pre>
+            </div>
+        </div>
+    </div>
+
+    <script src="popup.js"></script>
+</body>
+
+</html>
