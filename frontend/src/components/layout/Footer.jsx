@@ -1,5 +1,6 @@
 import { Link } from 'react-router-dom'
 import { useAuth } from '../../hooks/useAuth.js'
+import Button from '../ui/Button.jsx'
 import Brand from './Brand.jsx'
 
 export default function Footer() {
@@ -19,6 +20,15 @@ export default function Footer() {
           <Link to="/como-funciona">Como funciona</Link>
           <Link to="/privacidade">Privacidade</Link>
           {available ? <Link to="/conta">Minha conta</Link> : null}
+          <Button
+            href="https://wa.me/5511999999999"
+            external
+            variant="soft"
+            size="small"
+            icon="whatsapp"
+          >
+            Verificar pelo WhatsApp
+          </Button>
         </nav>
       </div>
     </footer>
