@@ -590,6 +590,19 @@
   border: 1px solid var(--tone-attention-border);
 }
 
+.model-prob-card__scope-pill {
+  display: inline-block;
+  font-size: var(--text-label);
+  font-weight: var(--weight-bold);
+  text-transform: uppercase;
+  letter-spacing: var(--tracking-label);
+  padding: 0.15rem var(--space-2);
+  border-radius: var(--radius-round);
+  background: var(--slate-150);
+  color: var(--slate-600);
+  border: 1px solid var(--color-border);
+}
+
 .model-prob-card__subheadline {
   margin: var(--space-1) 0 0;
   font-size: var(--text-small);

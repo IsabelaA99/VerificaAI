@@ -28,25 +28,31 @@ KNOWN_PUBLISHERS = {
     "boatos.org": "Boatos.org",
     "e-farsas.com": "E-farsas",
     "noticias.uol.com.br/confere": "UOL Confere",
+    "confere.uol.com.br": "UOL Confere",
     "estadao.com.br/estadao-verifica": "Estadão Verifica",
+    "chequeado.com": "Chequeado",
+    "factual.afp.com": "AFP Checamos",
+    "observador.pt": "Observador Fact Check",
+    "projetocomprova.com.br": "Projeto Comprova",
 }
 
 
 def _extract_query_keywords(claim_text: str, max_words: int = 8) -> str:
     """Extrai as palavras mais significativas da alegação para busca."""
-    # Remove pontuação desnecessária
     clean = re.sub(r"[^\w\s]", " ", claim_text, flags=re.UNICODE)
     words = clean.split()
-    # Remove stopwords comuns em português para busca mais precisa
     stopwords = {
         "o", "a", "os", "as", "um", "uma", "uns", "umas", "de", "do", "da", "dos", "das",
         "em", "no", "na", "nos", "nas", "para", "por", "com", "que", "se", "nao", "não",
         "e", "ou", "mas", "como", "ao", "aos", "pelo", "pela", "pelos", "pelas", "este",
         "esta", "esse", "essa", "isso", "isto", "urgente", "compartilhe", "veja", "foto",
+        "libera", "liberam", "documento", "documentos", "evidencia", "evidencias",
+        "evidência", "evidências", "fortalece", "fortalecem", "teoria", "teorias",
+        "revela", "revelam", "mostra", "mostram", "segundo", "afirma", "diz",
     }
     keywords = [w for w in words if len(w) > 2 and w.lower() not in stopwords]
     if not keywords:
-        keywords = words[:max_words]
+        keywords = [w for w in words if len(w) > 2]
     return " ".join(keywords[:max_words])
 
 
@@ -107,33 +113,36 @@ def _search_google_fact_check(query: str, api_key: str) -> list[dict[str, Any]]:
 
 def _search_fact_check_fallback(query: str) -> list[dict[str, Any]]:
     """
-    Fallback: Busca em checagens públicas brasileiras quando a chave
-    da Google API não estiver definida.
+    Fallback: Busca em checagens públicas brasileiras e internacionais de fact-checking.
+    Utiliza endpoint lite para evitar desafios de tela cheia/bloqueio.
     """
     search_term = f"{query} checagem fato fake"
-    url = f"https://html.duckduckgo.com/html/?q={urllib.parse.quote(search_term)}"
+    url = "https://lite.duckduckgo.com/lite/"
     headers = {
         "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/133.0.0.0 Safari/537.36",
     }
     try:
-        resp = requests.get(url, headers=headers, timeout=6)
+        resp = requests.post(url, data={"q": search_term}, headers=headers, timeout=6)
         if resp.status_code != 200:
             return []
 
         soup = BeautifulSoup(resp.text, "html.parser")
         results: list[dict[str, Any]] = []
 
-        for i, el in enumerate(soup.select(".result")[:6]):
-            link_el = el.select_one(".result__url")
-            title_el = el.select_one(".result__title")
-            snippet_el = el.select_one(".result__snippet")
-
-            if not link_el or not title_el:
+        rows = soup.select("table tr")
+        for row in rows:
+            link_el = row.select_one("a.result-link")
+            if not link_el:
                 continue
 
-            raw_link = link_el.get_text(strip=True)
-            title = title_el.get_text(strip=True)
-            snippet = snippet_el.get_text(strip=True) if snippet_el else ""
+            title = link_el.get_text(strip=True)
+            raw_link = link_el.get("href") or ""
+            snippet_tr = row.find_next_sibling("tr")
+            snippet = (
+                snippet_tr.select_one("td.result-snippet").get_text(strip=True)
+                if snippet_tr and snippet_tr.select_one("td.result-snippet")
+                else ""
+            )
 
             # Identifica se é veículo de checagem conhecido
             publisher = "Agência de Notícias / Checagem"
@@ -142,35 +151,26 @@ def _search_fact_check_fallback(query: str) -> list[dict[str, Any]]:
                     publisher = name
                     break
 
-            # Determina a relação a partir do título
-            title_lower = title.lower()
-            snippet_lower = snippet.lower()
-            if any(w in title_lower or w in snippet_lower for w in ("é falso", "é fake", "não é verdade", "boato", "engana", "distorce", "desment")):
+            # Determina a relação a partir do título e snippet
+            combined_text = f"{title} {snippet}".lower()
+            if any(w in combined_text for w in ("é falso", "é fake", "não é verdade", "boato", "engana", "distorce", "desment", "es falso", "desmente", "falso")):
                 relation = "conflicting"
-                reason = "A apuração jornalística indica que a alegação é falsa ou enganosa."
-            elif any(w in title_lower or w in snippet_lower for w in ("é fato", "é verdade", "verdadeiro", "confirma")):
+                reason = "A apuração de fact-checking indica que a alegação é falsa ou enganosa."
+            elif any(w in combined_text for w in ("é fato", "é verdade", "verdadeiro", "confirma", "es verdad")):
                 relation = "compatible"
                 reason = "A apuração indica que os fatos relatados são verídicos."
             else:
                 relation = "contextual"
-                reason = "Publicação com cobertura contextual relacionada ao tema."
-
-            # Extrai link real
-            href = ""
-            a_tag = el.select_one("a.result__url") or el.select_one("a.result__snippet") or el.select_one(".result__title a")
-            if a_tag and a_tag.get("href"):
-                href = str(a_tag["href"])
-                if "uddg=" in href:
-                    href = urllib.parse.unquote(href.split("uddg=")[-1].split("&")[0])
+                reason = "Publicação de checagem com contextualização sobre o tema."
 
             results.append({
-                "id": f"src-{i + 1}",
+                "id": f"src-{len(results) + 1}",
                 "relation": relation,
                 "publisher": publisher,
                 "title": title,
                 "excerpt": snippet,
                 "published_at": None,
-                "url": href or f"https://{raw_link}",
+                "url": raw_link,
                 "relation_reason": reason,
             })
 

@@ -75,6 +75,11 @@ export default function VerdictCard({ analysis }) {
                       {model.discourseLabel}
                     </span>
                   ) : null}
+                  {model.isOutOfDomain ? (
+                    <span className="model-prob-card__scope-pill">
+                      Fora do Escopo de Treino do Modelo
+                    </span>
+                  ) : null}
                 </div>
                 <p className="model-prob-card__headline">
                   {fakeRatio >= 0.5 ? (
@@ -89,7 +94,7 @@ export default function VerdictCard({ analysis }) {
                 </p>
                 {isDiscrepant ? (
                   <p className="model-prob-card__subheadline">
-                    Padrão de redação jornalística (estilo) · Conteúdo contestado pelo consenso histórico
+                    Padrão de redação da imprensa tradicional (estilo) · Conteúdo contestado por checagens
                   </p>
                 ) : null}
               </div>
@@ -130,9 +135,9 @@ export default function VerdictCard({ analysis }) {
             {/* Alertas Expositivos de Margem, Risco e Discrepância */}
             {isDiscrepant ? (
               <div className="model-prob-card__alert model-prob-card__alert--danger">
-                <strong>Alerta de Discrepância (Estilo Formal vs Consenso Histórico):</strong>
+                <strong>Atenção: Modelo Treinado em Imprensa Tradicional · Use o Fact-Checking:</strong>
                 <span>
-                  O classificador textual atribuiu alta probabilidade de formato jornalístico legítimo ({formatPercent(trueRatio)}) devido à pontuação correta e menção a órgãos oficiais. No entanto, a análise de conteúdo constatou que o texto veicula <strong>teorias especulativas que divergem do consenso historiográfico consolidado</strong>. A qualidade gramatical da redação não comprova a veracidade da tese.
+                  O classificador BERTimbau foi treinado exclusivamente com matérias da imprensa tradicional (reconhecimento de formato formal jornalístico). Ele não foi treinado para validar teorias históricas ou conspiratórias. Portanto, a probabilidade calculada ({formatPercent(trueRatio)}) avalia apenas o estilo textual da escrita. A verificação factual deste conteúdo depende prioritariamente das <strong>Checagens de Fatos (Fact-Checking)</strong> e do consenso histórico documentado.
                 </span>
                 {model.uncertaintyWarning ? (
                   <span className="model-prob-card__alert-note">{model.uncertaintyWarning}</span>

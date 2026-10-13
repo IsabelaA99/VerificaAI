@@ -69,6 +69,10 @@ def _explanation(obj: Analysis) -> list[str]:
             items.append("O padrão de escrita do texto se parece com o de notícias falsas vistas no treinamento do modelo.")
         else:
             items.append("O padrão de escrita do texto se parece com o de notícias verdadeiras vistas no treinamento do modelo.")
+    elif llm_info.get("discourse_type") in ("conspiracy_or_theoretical", "opinion"):
+        items.append(
+            "Nota metodológica: O modelo BERTimbau foi treinado exclusivamente com matérias da imprensa tradicional (reconhecimento de estilo formal). Ele não foi treinado para validar teorias históricas ou conspiratórias. A avaliação factual deste conteúdo baseia-se prioritariamente nas checagens de fatos (Fact Check) e no consenso historiográfico."
+        )
 
     terms = ling.get("sensational_terms") or []
     if terms and not any(terms[0] in it for it in items):
@@ -121,13 +125,17 @@ class AnalysisResultSerializer(serializers.ModelSerializer):
     def get_model(self, obj):
         cls = (obj.technical or {}).get("classification", {})
         llm_info = (obj.technical or {}).get("llm_analysis", {})
+        discourse_type = llm_info.get("discourse_type", "factual")
+        is_out_of_domain = discourse_type in ("conspiracy_or_theoretical", "opinion")
         return {
             "label": obj.model_label,
             "fake_probability": obj.model_fake_probability,
             "confidence": obj.model_confidence,
             "calibrated": (obj.technical or {}).get("calibrator", {}).get("calibrated", False),
-            "discourse_type": llm_info.get("discourse_type", "factual"),
+            "discourse_type": discourse_type,
             "discourse_label": llm_info.get("discourse_label", "Relato Factual"),
+            "is_out_of_domain": is_out_of_domain,
+            "training_scope": "Treinado com veículos da imprensa tradicional (reconhecimento de estilo jornalístico).",
             "semantic_comparison": llm_info.get("semantic_comparison") or {},
             "lexical_analysis": llm_info.get("lexical_analysis") or {},
             "uncertainty_warning": llm_info.get("uncertainty_warning", ""),

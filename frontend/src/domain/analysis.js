@@ -212,6 +212,8 @@ function normalizeModel(raw) {
     tokensTotal: asNumberOrNull(m.tokens_total),
     discourseType: asString(m.discourse_type) || null,
     discourseLabel: asString(m.discourse_label) || null,
+    isOutOfDomain: m.is_out_of_domain === true,
+    trainingScope: asString(m.training_scope) || null,
     uncertaintyWarning: asString(m.uncertainty_warning) || null,
     semanticComparison: isRecord(m.semantic_comparison) ? m.semantic_comparison : null,
     lexicalAnalysis: isRecord(m.lexical_analysis) ? m.lexical_analysis : null,
