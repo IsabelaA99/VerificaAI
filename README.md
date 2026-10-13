@@ -208,8 +208,8 @@ Entrada (Texto ou Link)
 
 ### 2. Integração com Google Fact Check Tools & Agências
 * Consulta a API oficial do Google Fact Check (`factchecktools.googleapis.com`) em busca de análises prévias registradas via *ClaimReview*.
-* Se a API não trouxer resultados, faz uma busca pública na internet e identifica veículos de checagem conhecidos entre os resultados; a busca não se limita a esses veículos.
-* Classifica cada resultado como **Conflitante** (*conflicting*), **Compatível** (*compatible*) ou **Contextual** (*contextual*) por palavras do veredito ou do título/resumo. A relação com a alegação não é confirmada em profundidade; confira o link original.
+* Se a API não trouxer alegações relacionadas, consulta Projeto Comprova, Boatos.org e Wikipédia como alternativas.
+* Só usa o veredito para classificar uma fonte como **Conflitante** (*conflicting*) ou **Compatível** (*compatible*) quando os termos da alegação checada correspondem aos da alegação analisada, na mesma ordem e sem divergência de negação ou números. Fontes relacionadas, mas sem correspondência segura, ficam **Contextuais** (*contextual*) e não entram como evidência na síntese nem no sinal de conflito. A regra é conservadora e não reconhece todas as paráfrases; confira o link original.
 
 ### 3. Síntese Explicativa via LLM ("Por isso e por isso")
 * Cruza a avaliação probabilística da IA com os achados de checagem na internet e os gatilhos de linguagem.

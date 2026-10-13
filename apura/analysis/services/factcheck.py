@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import logging
 import re
+import unicodedata
 import urllib.parse
 from typing import Any
 
@@ -96,6 +97,7 @@ def _search_google_fact_check(query: str, api_key: str) -> list[dict[str, Any]]:
 
                 results.append({
                     "id": f"gfc-{i + 1}",
+                    "_checked_claim": claim_text,
                     "relation": relation,
                     "publisher": publisher_name,
                     "title": title,
@@ -117,6 +119,76 @@ _STOPWORDS_QUERY = {
     "isso", "isto", "como", "pelo", "pela", "pelos", "pelas", "ontem", "hoje", "amanha", "amanhã", "sobre",
     "segundo", "afirma", "diz", "anuncia", "anunciou", "revela", "mostra"
 }
+
+
+_CLAIM_STOPWORDS = {
+    "a", "o", "as", "os", "um", "uma", "uns", "umas", "de", "do", "da",
+    "dos", "das", "no", "na", "nos", "nas", "em", "ao", "aos", "que",
+}
+_NEGATIONS = {"nao", "nunca", "jamais", "sem", "nem", "nenhum", "nenhuma", "ninguem", "tampouco"}
+
+
+def _normalized_claim(text: str) -> str:
+    return "".join(
+        char for char in unicodedata.normalize("NFKD", text.lower())
+        if not unicodedata.combining(char)
+    )
+
+
+def _claim_terms(text: str) -> list[str]:
+    return [
+        term for term in re.findall(r"[a-z0-9]+", _normalized_claim(text))
+        if len(term) > 1 and term not in _CLAIM_STOPWORDS
+    ]
+
+
+def _claim_match_level(original: str, checked: str) -> str:
+    """Só chama de mesma alegação uma correspondência lexical forte e sem contradições óbvias.
+
+    Casos ambíguos ficam contextuais: esta regra não tenta provar equivalência semântica.
+    """
+    original_terms = _claim_terms(original)
+    checked_terms = _claim_terms(checked)
+    if not original_terms or not checked_terms:
+        return "unrelated"
+
+    shared = (set(original_terms) & set(checked_terms)) - _NEGATIONS
+    if len(shared) < 2:
+        return "unrelated"
+
+    original_words = set(re.findall(r"[a-z0-9]+", _normalized_claim(original)))
+    checked_words = set(re.findall(r"[a-z0-9]+", _normalized_claim(checked)))
+    original_numbers = {word for word in original_words if word.isdigit()}
+    checked_numbers = {word for word in checked_words if word.isdigit()}
+    if (original_words & _NEGATIONS) != (checked_words & _NEGATIONS) or original_numbers != checked_numbers:
+        return "related"
+
+    # Termos extras podem mudar o alcance ("em animais", outra localidade etc.).
+    # Nesse caso é mais seguro oferecer contexto sem usar o veredito no risco.
+    if original_terms == checked_terms:
+        return "same"
+    return "related"
+
+
+def _claim_from_review_title(title: str) -> str:
+    """Remove apenas um veredito editorial no início do título da checagem."""
+    words = " ".join(re.findall(r"[a-z0-9]+", _normalized_claim(title)))
+    return re.sub(
+        r"^(?:(?:e|isso e)\s+)?(?:falso|fake|verdadeiro|verdade|boato|mito)\s+(?:que\s+)?",
+        "", words, count=1,
+    )
+
+
+def _validate_source_relation(original_claim: str, source: dict[str, Any]) -> dict[str, Any] | None:
+    source = dict(source)
+    checked_claim = source.pop("_checked_claim", "") or _claim_from_review_title(source.get("title") or "")
+    match = _claim_match_level(original_claim, checked_claim)
+    if match == "unrelated":
+        return None
+    if match != "same" or source.get("publisher", "").startswith("Wikipédia"):
+        source["relation"] = "contextual"
+        source["relation_reason"] = "Fonte relacionada ao tema; a mesma alegação não foi confirmada com segurança."
+    return source
 
 
 def _check_overlap(query: str, text: str) -> int:
@@ -361,9 +433,14 @@ def search_fact_checks(claim_or_title: str) -> dict[str, Any]:
     if api_key:
         sources = _search_google_fact_check(query, api_key)
 
-    # 2. Se não houver chave ou a API retornar vazio, utiliza o fallback
+    # Resultados da busca podem tratar apenas de um assunto parecido.
+    sources = [validated for source in sources
+               if (validated := _validate_source_relation(claim_or_title, source)) is not None]
+
+    # 2. Se a API não trouxe alegações relacionadas, utiliza o fallback
     if not sources:
-        sources = _search_fact_check_fallback(query)
+        sources = [validated for source in _search_fact_check_fallback(query)
+                   if (validated := _validate_source_relation(claim_or_title, source)) is not None]
 
     # Avaliação do conflito de evidências (RF08)
     has_conflicting = any(s.get("relation") == "conflicting" for s in sources)

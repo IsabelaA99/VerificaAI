@@ -87,7 +87,10 @@ def _execute_pipeline(
     claim_query = news.title or summarize_claim(news)
     fact_res = factcheck.search_fact_checks(claim_query)
     evidence_conflict = fact_res.get("conflict_score")
+    verified_sources = [source for source in fact_res.get("sources", [])
+                        if source.get("relation") in ("conflicting", "compatible")]
 
+    # Fontes apenas contextuais aparecem no resultado, mas não sustentam a síntese nem a abstenção.
     # 4. Síntese explicativa via LLM (Gemini / Groq / OpenAI / Síntese Neural Especializada)
     llm_res = llm.synthesize_explanation(
         title=news.title,
@@ -96,7 +99,7 @@ def _execute_pipeline(
         model_confidence=cls.confidence,
         model_label=cls.label,
         linguistic_indicators=ling,
-        sources=fact_res.get("sources", []),
+        sources=verified_sources,
         source_domain=source_domain,
     )
 
@@ -133,7 +136,7 @@ def _execute_pipeline(
     risk_info = risk.compute_risk_index(signals, rules.weights)
 
     # 6. Regra de Abstenção Probabilística (RF14)
-    evidence_available = bool(fact_res.get("sources")) or (evidence_conflict is not None)
+    evidence_available = bool(verified_sources) or (evidence_conflict is not None)
     reasons = risk.abstention_reasons(
         rules=rules,
         model_confidence=cls.confidence,

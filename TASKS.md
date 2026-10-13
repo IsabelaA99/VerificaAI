@@ -59,7 +59,7 @@ regras de risco, abstenção e rastreabilidade de versões.
 ## Etapa 3 — Alegação, evidências e síntese LLM
 - [x] Identificação e resumo da alegação principal (RF06, RF20)
 - [x] Consulta a evidências via Google Fact Check Tools API + fallback de busca pública (RF07)
-- [/] Classificação fonte × alegação: hoje usa palavras do veredito ou título/resumo, sem confirmar a correspondência com a alegação; implementar validação mais robusta (RF08)
+- [/] Classificação fonte × alegação: veredito só influencia o risco quando o texto da alegação checada corresponde aos termos da alegação enviada, na mesma ordem e sem divergência de negação ou números. Resultados relacionados ficam contextuais; falta validação semântica para reconhecer paráfrases com segurança (RF08)
 - [x] Síntese explicativa contextual via LLM (Gemini / OpenAI / Síntese Neural) explicando "por isso e por isso"
 - [x] Ativação do sinal `evidence_conflict` no cálculo do índice de risco ponderado
 

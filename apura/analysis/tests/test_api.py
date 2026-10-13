@@ -7,6 +7,7 @@ from rest_framework.test import APIClient
 
 from analysis.models import Analysis
 from analysis.services import classifier as classifier_service
+from analysis.services import llm as llm_service
 from analysis.services.classifier import ClassificationResult
 from analysis.services.scraper import ScrapedArticle
 
@@ -73,6 +74,20 @@ class AnalysisApiTests(TestCase):
             or "evidence_conflict" in body["risk"]["signals_used"]
         )
         self.assertTrue(body["limitations"])
+
+    def test_contextual_source_is_not_sent_as_checked_evidence_to_llm(self):
+        classifier_service.set_classifier(FakeClassifier(0.9))
+        sources = [
+            {"id": "context-1", "relation": "contextual", "publisher": "Agência", "title": "Tema relacionado"},
+            {"id": "checked-1", "relation": "conflicting", "publisher": "Agência", "title": "Mesma alegação"},
+        ]
+        fact_result = {"status": "found", "enabled": True, "sources": sources, "conflict_score": 1.0}
+        with patch("analysis.services.pipeline.factcheck.search_fact_checks", return_value=fact_result), \
+             patch("analysis.services.pipeline.llm.synthesize_explanation",
+                   wraps=llm_service.synthesize_explanation) as synthesize:
+            response = self._post({"text": PT_TEXT})
+        self.assertEqual(response.status_code, 201, response.content)
+        self.assertEqual(synthesize.call_args.kwargs["sources"], [sources[1]])
 
     def test_low_risk_result(self):
         classifier_service.set_classifier(FakeClassifier(0.02))

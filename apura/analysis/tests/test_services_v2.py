@@ -5,7 +5,7 @@ Testes dos serviços de raspagem, checagem de fatos e síntese LLM.
 from unittest.mock import MagicMock, patch
 from django.test import SimpleTestCase
 
-from analysis.services.factcheck import _extract_query_keywords, search_fact_checks
+from analysis.services.factcheck import _claim_match_level, _extract_query_keywords, search_fact_checks
 from analysis.services.llm import synthesize_explanation
 from analysis.services.preprocessing import InputValidationError
 from analysis.services.scraper import ScrapedArticle, scrape_url, validate_url_safety
@@ -139,6 +139,77 @@ class FactCheckTests(SimpleTestCase):
             self.assertEqual(res["status"], "found")
             self.assertEqual(len(res["sources"]), 1)
             self.assertEqual(res["conflict_score"], 1.0)
+
+    def test_claim_match_requires_same_terms_order_polarity_and_numbers(self):
+        self.assertEqual(_claim_match_level("Vacina causa autismo", "Vacina causa autismo"), "same")
+        self.assertEqual(_claim_match_level("Vacina causa autismo", "Vacina não causa autismo"), "related")
+        self.assertEqual(_claim_match_level("Não há provas da vacina", "Há provas da não vacina"), "related")
+        self.assertEqual(_claim_match_level("Governo acusa empresa", "Empresa acusa governo"), "related")
+        self.assertEqual(_claim_match_level("100 escolas fecharam", "200 escolas fecharam"), "related")
+        self.assertEqual(_claim_match_level("Vacina causa autismo", "Vacina causa gripe"), "related")
+        self.assertEqual(_claim_match_level("Vacina causa autismo", "Vacina causa autismo em animais"), "related")
+        self.assertEqual(_claim_match_level("Escolas fecham hoje", "Escolas fecham amanhã"), "related")
+        self.assertEqual(_claim_match_level("Vacina e remédio curam doença", "Vacina ou remédio curam doença"), "related")
+        self.assertEqual(_claim_match_level("Vacina causa autismo", "Terremoto atingiu a cidade"), "unrelated")
+
+    @patch("analysis.services.factcheck.requests.get")
+    def test_google_checked_claim_takes_precedence_over_review_title(self, request_get):
+        response = request_get.return_value
+        response.status_code = 200
+        response.json.return_value = {"claims": [{
+            "text": "Vacina causa gripe",
+            "claimReview": [{"title": "É #FAKE que vacina causa autismo", "textualRating": "Falso"}],
+        }]}
+        with patch.dict("django.conf.settings.FAKE_EYES", {"GOOGLE_FACT_CHECK_API_KEY": "dummy-key"}), \
+             patch("analysis.services.factcheck._search_fact_check_fallback", return_value=[]):
+            result = search_fact_checks("Vacina causa autismo")
+        self.assertEqual(result["sources"][0]["relation"], "contextual")
+        self.assertIsNone(result["conflict_score"])
+
+    @patch("analysis.services.factcheck._search_fact_check_fallback", return_value=[])
+    @patch("analysis.services.factcheck._search_google_fact_check")
+    def test_google_result_about_other_claim_cannot_affect_risk(self, mock_gfc, fallback):
+        mock_gfc.return_value = [{
+            "id": "gfc-1", "_checked_claim": "Vacina causa gripe",
+            "relation": "conflicting", "publisher": "Agência de checagem",
+            "title": "É falso que vacina causa gripe", "relation_reason": "Falso.",
+        }]
+        with patch.dict("django.conf.settings.FAKE_EYES", {"GOOGLE_FACT_CHECK_API_KEY": "dummy-key"}):
+            result = search_fact_checks("Vacina causa autismo")
+        self.assertEqual(result["sources"][0]["relation"], "contextual")
+        self.assertIsNone(result["conflict_score"])
+        self.assertNotIn("_checked_claim", result["sources"][0])
+        fallback.assert_not_called()
+
+    @patch("analysis.services.factcheck._search_fact_check_fallback", return_value=[])
+    @patch("analysis.services.factcheck._search_google_fact_check")
+    def test_unrelated_google_result_is_discarded_and_fallback_runs(self, mock_gfc, fallback):
+        mock_gfc.return_value = [{
+            "id": "gfc-1", "_checked_claim": "Terremoto atingiu a cidade",
+            "relation": "conflicting", "publisher": "Agência de checagem",
+            "title": "É falso que houve terremoto", "relation_reason": "Falso.",
+        }]
+        with patch.dict("django.conf.settings.FAKE_EYES", {"GOOGLE_FACT_CHECK_API_KEY": "dummy-key"}):
+            result = search_fact_checks("Vacina causa autismo")
+        self.assertEqual(result["status"], "none")
+        self.assertIsNone(result["conflict_score"])
+        fallback.assert_called_once()
+
+    @patch("analysis.services.factcheck._search_fact_check_fallback")
+    def test_fallback_verdict_needs_same_claim_and_wikipedia_is_context(self, fallback):
+        fallback.return_value = [
+            {"id": "src-1", "relation": "conflicting", "publisher": "Projeto Comprova",
+             "title": "É falso que vacina causa autismo", "relation_reason": "Falso."},
+            {"id": "src-2", "relation": "conflicting", "publisher": "Boatos.org",
+             "title": "É falso que vacina causa gripe", "relation_reason": "Falso."},
+            {"id": "src-3", "relation": "conflicting", "publisher": "Wikipédia (Consenso Enciclopédico)",
+             "title": "Vacina causa autismo", "relation_reason": "Teoria da conspiração."},
+        ]
+        with patch.dict("django.conf.settings.FAKE_EYES", {"GOOGLE_FACT_CHECK_API_KEY": ""}):
+            result = search_fact_checks("Vacina causa autismo")
+        self.assertEqual([source["relation"] for source in result["sources"]],
+                         ["conflicting", "contextual", "contextual"])
+        self.assertEqual(result["conflict_score"], 1.0)
 
 
 @patch("analysis.services.llm._call_gemini", return_value=None)

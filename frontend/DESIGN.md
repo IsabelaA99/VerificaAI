@@ -270,7 +270,7 @@ Os testes citados rodam com `npm test`.
 | RF05 Privacidade no processamento | MVP | **Parcial** | `services/resultCache.js`, `services/historyStore.js`, `content/privacy.js` | `stores.test.js`, `privacy.test.js`, `hygiene.test.js` | O rascunho fica só na memória e o histórico local guarda a alegação resumida. O servidor mascara CPF, e-mail e telefone nesse resumo, mas explicações e fontes persistidas podem repetir trechos do conteúdo; a página de privacidade informa essa limitação. |
 | RF06 Alegação principal | MVP | **Parcial** | `VerdictCard.jsx` | `ResultPage.test.jsx` | A alegação aparece junto do resultado. **Confirmar, corrigir ou escolher outra alegação não foi implementado**: a API não tem esse contrato. A tela diz: "Ainda não é possível confirmar ou corrigir a alegação nesta versão." |
 | RF07 Fontes relacionadas | MVP | **Parcial** | `SourcesSection.jsx`, `analysis/services/factcheck.py` | `ResultPage.test.jsx`; testes do back end com mocks | A API consulta a Google Fact Check Tools quando configurada e recorre a uma busca pública. A tela distingue ausência e fontes encontradas; o back end ainda não informa falha da consulta separadamente da ausência de resultados. |
-| RF08 Relação fonte × alegação | MVP | **Parcial** | `SourcesSection.jsx`, `domain/analysis.js`, `analysis/services/factcheck.py` | `ResultPage.test.jsx`, `analysis.test.js` | A interface aceita relações compatível, conflitante, contextual e insuficiente. O back end gera as três primeiras por palavras do veredito ou do título/resumo, sem verificar em profundidade a correspondência com a alegação. Isso pode afetar o índice. |
+| RF08 Relação fonte × alegação | MVP | **Parcial** | `SourcesSection.jsx`, `domain/analysis.js`, `analysis/services/factcheck.py` | `ResultPage.test.jsx`, `analysis.test.js`; testes do back end com mocks | A interface aceita relações compatível, conflitante, contextual e insuficiente. O back end só usa o veredito quando a alegação checada tem os mesmos termos, na mesma ordem e sem divergência de negação ou números. Fontes apenas relacionadas ficam contextuais; paráfrases ainda precisam de validação semântica. |
 | RF09 Contexto temporal e entidades | MVP | **Depende do back end** | — | — | A API v1 não devolve entidades nem indicador temporal; a interface não exibe nada do tipo (o RF09 manda mostrar o indicador só quando há relação explícita). |
 | RF10 Indicadores linguísticos | MVP | **Atende** | `IndicatorsSection.jsx` | `ResultPage.test.jsx` | Rotulados como indicadores auxiliares, nunca como prova; seção separada das fontes. |
 | RF11 Classificação textual | MVP | **Atende** (exibição) | `TechnicalDetails.jsx` | `ResultPage.test.jsx` | Mostra o identificador e a integridade (SHA-256) do modelo, a classe e a confiança, na área técnica. |
@@ -449,8 +449,9 @@ uma pode ser trocada**; indico onde.
 - **Só Chromium** foi usado nos testes de navegador (RNF15 pendente).
 - **Leitor de tela e pessoas idosas** não participaram (RNF08 pendente).
 - **Contador de visitante no navegador:** limpar os dados do navegador o reinicia (risco do RNF19).
-- **Relação entre fonte e alegação heurística:** títulos e vereditos podem indicar uma relação
-  incorreta; o índice de risco usa essa classificação quando há fonte compatível ou conflitante.
+- **Relação entre fonte e alegação conservadora, mas lexical:** fontes com termos iguais e mesma
+  ordem podem ainda diferir em sentido ou contexto. Só relações compatíveis ou conflitantes entram
+  diretamente no sinal de evidência do índice; paráfrases ficam contextuais.
 - **Endereços que não existem** recebem HTTP 200 com a tela "Página não encontrada" (o servidor
   devolve `index.html` para qualquer caminho): é o comportamento padrão de uma aplicação de página
   única. Não afeta o uso; só muda como ferramentas externas (buscadores, monitoramento) enxergam
