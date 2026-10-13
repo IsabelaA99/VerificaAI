@@ -1,6 +1,6 @@
-# verificAI — Apura
+# verificAI — Fake Eyes / Apura
 
-Sistema completo de apoio à avaliação de notícias e alegações em língua portuguesa, integrando backend **Django + Django REST Framework**, modelo de NLP **BERTimbau V4 (com fatiamento determinístico e tokens de separação `[SEP]`)**, frontend moderno **ApuraWeb (React 19 + Vite 8)** e **extensão de navegador** para Chrome e Firefox.
+Sistema completo de apoio à avaliação de notícias e alegações em língua portuguesa, integrando backend **Django + Django REST Framework**, modelo de NLP **BERTimbau V4 (com fatiamento determinístico e tokens de separação `[SEP]`)** e frontend moderno **ApuraWeb (React 19 + Vite 8)**.
 
 Plano de entrega por etapas da especificação: [TASKS.md](TASKS.md).
 
@@ -14,16 +14,10 @@ verificAI/
 │   ├── manage.py
 │   ├── apura/                  # settings, urls, wsgi
 │   └── analysis/               # App de análise (API v1, regras, fatiamento)
-│       ├── api/                # API REST v1 (views, serializers, throttling, erros)
+│       ├── api/                # API REST v1 (views, serializers, erros)
 │       ├── services/           # classifier, preprocessing, risk, pipeline
 │       ├── rules/rules_v1.json # Pesos e limiares versionados
 │       └── tests/
-├── extension/                  # Extensão de navegador (Chrome & Firefox)
-│   ├── manifest.json           # Manifest V3 (compatível com Chrome e Firefox ≥ 109)
-│   ├── popup.html              # Interface da extensão
-│   ├── popup.css               # Estilos (identidade visual navy+gold do ApuraWeb)
-│   ├── popup.js                # Lógica do popup: estados, fetch à API, renderização
-│   └── content.js              # Script injetado na página: extrai título e conteúdo
 ├── frontend/                   # Interface Web (React 19 + Vite 8)
 │   ├── src/                    # Componentes, páginas, domínio, estado, estilos
 │   ├── public/                 # Favicons, manifesto e robôs
@@ -40,74 +34,6 @@ verificAI/
 ├── Dockerfile                  # Imagem do backend Django
 ├── requirements.txt            # Dependências Python
 └── .env.example
-```
-
----
-
-## Extensão de Navegador (Chrome & Firefox)
-
-A extensão **ApuraWeb** permite verificar a confiabilidade de qualquer notícia diretamente no navegador, sem copiar e colar texto, sem limite de uso por cliente.
-
-### Funcionalidades
-
-- **Análise com um clique** — o usuário abre o artigo e pressiona o botão; o texto é extraído e enviado ao servidor local automaticamente.
-- **Extração inteligente de conteúdo** — o `content.js` ignora menus, rodapés, sidebars, anúncios e comentários, retornando apenas o corpo do artigo; prioriza `og:title` e detecta o contêiner semântico da notícia.
-- **Resultado visual imediato** — banner de veredito com ícone e cor por faixa de risco (✅ Seguro / ⚠️ Atenção / 🚨 Alto risco / 🔍 Inconclusivo), barra de risco animada (0–100) e estatísticas rápidas (rótulo do modelo, probabilidade, confiança).
-- **Modal de detalhes completos** — ao clicar em "Ver análise completa", abre um painel com cinco seções: Veredito, Explicação, O que fazer, Fontes verificadas e Dados técnicos (id, tempo de análise, tokens, versões).
-- **Identidade visual** alinhada ao site ApuraWeb: paleta azul-marinho e dourado, tipografia Roboto + STIX Two Text.
-- **Sem quota de uso** — requisições identificadas com `X-Client-Source: browser-extension` são isentas do throttle do servidor.
-
-### Como instalar (modo desenvolvedor)
-
-> O servidor Django precisa estar rodando em `http://127.0.0.1:8000` antes de usar a extensão.
-
-#### Chrome / Edge / Brave
-
-1. Acesse `chrome://extensions` (ou `edge://extensions` / `brave://extensions`)
-2. Ative o **Modo do desenvolvedor** (canto superior direito)
-3. Clique em **Carregar sem compactação**
-4. Selecione a pasta `extension/` do repositório
-
-#### Firefox
-
-1. Acesse `about:debugging#/runtime/this-firefox`
-2. Clique em **Carregar extensão temporária…**
-3. Selecione o arquivo `extension/manifest.json`
-
-> A extensão permanece instalada enquanto o Firefox estiver aberto. Para uso permanente no Firefox, é necessário assinar a extensão via [addons.mozilla.org](https://addons.mozilla.org).
-
-### Integração com o backend
-
-| Aspecto | Detalhe |
-|---|---|
-| Endpoint | `POST http://127.0.0.1:8000/api/v1/analyses/` |
-| Payload enviado | `{ input_type: "text", title, text }` |
-| Header de identificação | `X-Client-Source: browser-extension` |
-| Throttle | **Isento** — sem quota por cliente para a extensão |
-| CORS | Liberado para `chrome-extension://` e `moz-extension://` |
-| Formato da resposta | Objeto simplificado com `result.verdict_code`, `result.score`, `result.explanation`, `result.full_details` |
-
-### Exemplo de resposta da API para a extensão
-
-```json
-{
-  "status": "ok",
-  "result": {
-    "verdict_code": "DANGER",
-    "label": "Alto risco",
-    "score": "85/100",
-    "risk_index": 84.91,
-    "summary": "Esta notícia apresenta alta probabilidade de ser falsa...",
-    "model_label": "Falsa",
-    "fake_probability": 99.8,
-    "confidence": 99.8,
-    "explanation": ["..."],
-    "recommendations": ["..."],
-    "evidence": { "sources": [...] },
-    "limitations": ["..."],
-    "full_details": { ... }
-  }
-}
 ```
 
 ---
@@ -144,7 +70,7 @@ Para processar matérias longas (até o limite de 20.000 caracteres) sem perda d
 
 ## Sistema Estritamente Probabilístico & Governança de Risco
 
-> **Princípio Fundamental:** O sistema Apura **não emite certezas factuais absolutas**. Todo resultado é um indicador de risco estatístico/probabilístico baseado em padrões textuais aprendidos.
+> **Princípio Fundamental:** O sistema Fake Eyes **não emite certezas factuais absolutas**. Todo resultado é um indicador de risco estatístico/probabilístico baseado em padrões textuais aprendidos.
 
 ### 1. Métricas do Modelo
 
@@ -225,11 +151,7 @@ cd apura
 
 A API estará rodando em `http://localhost:8000`.
 
-### 2. Extensão de Navegador
-
-Com o backend rodando, carregue a extensão no navegador (ver seção [Como instalar](#como-instalar-modo-desenvolvedor) acima). Não há etapa de build — os arquivos da pasta `extension/` são carregados diretamente.
-
-### 3. Front end (React 19 + Vite 8)
+### 2. Front end (React 19 + Vite 8)
 ```bash
 cd frontend
 npm ci
@@ -254,7 +176,7 @@ docker compose exec web python manage.py collectstatic --no-input
 * **`http://localhost/api/`**: API Django REST Framework.
 * **`http://localhost/admin/`**: Painel administrativo do Django.
 
-> A extensão de navegador continua funcionando com Docker — basta apontar `SERVER_URL` em `extension/popup.js` para `http://localhost/api/v1/analyses/` se quiser usar o stack completo em vez do `runserver` local.
+---
 
 ---
 
@@ -263,9 +185,7 @@ docker compose exec web python manage.py collectstatic --no-input
 O sistema implementa um pipeline integrado de ponta a ponta:
 
 ```text
-Entrada (Texto, Link ou Extensão de Navegador)
-   │
-   ├── [Extensão] ──> Extração do artigo via content.js ──> Enviado como texto estruturado
+Entrada (Texto ou Link) 
    │
    ├── [Se Link] ──> Validação SSRF ──> Raspagem (Trafilatura) ──> Extração Limpa (sem popups/cookies)
    │
@@ -300,21 +220,8 @@ Entrada (Texto, Link ou Extensão de Navegador)
 | Método | Rota | Descrição |
 |---|---|---|
 | `GET` | `/api/v1/health/?load=1` | Status do serviço, versões e informações do modelo carregado |
-| `POST` | `/api/v1/analyses/` | Submete uma análise síncrona por **texto**, **link** ou **extensão** (≤ 30s) |
+| `POST` | `/api/v1/analyses/` | Submete uma análise síncrona por **texto** ou por **link** (≤ 30s) |
 | `GET` | `/api/v1/analyses/<id>/` | Recupera resultado persistido e versões técnicas |
-
-### Exemplo de Requisição via Extensão (POST `/api/v1/analyses/`)
-
-```json
-{
-  "input_type": "text",
-  "title": "Título extraído da página",
-  "text": "Corpo principal do artigo extraído pelo content.js..."
-}
-```
-```
-Header: X-Client-Source: browser-extension
-```
 
 ### Exemplo de Requisição por Link (POST `/api/v1/analyses/`)
 
@@ -332,7 +239,7 @@ Header: X-Client-Source: browser-extension
   "id": "e87ac338-8a06-4fb7-9a45-aec1cd52fcd2",
   "api_version": "v1",
   "created_at": "2026-10-09T15:20:00Z",
-  "input_type": "text",
+  "input_type": "url",
   "status": {
     "code": "alto_risco",
     "label": "Alto risco"
@@ -346,7 +253,7 @@ Header: X-Client-Source: browser-extension
     "Esta notícia apresenta alta probabilidade de ser falsa (94% segundo o modelo BERTimbau) e o conteúdo foi contestado por agências de checagem na internet.",
     "O modelo BERTimbau identificou probabilidade de 94% de conteúdo enganoso com base em padrões textuais característicos de desinformação.",
     "Foram encontradas checagens de fatos que desmentem as alegações centrais da matéria.",
-    "Foram encontradas expressões apelativas: "urgente", "milagrosa"."
+    "Foram encontradas expressões apelativas: “urgente”, “milagrosa”."
   ],
   "evidence": {
     "enabled": true,
@@ -391,7 +298,7 @@ Header: X-Client-Source: browser-extension
     "model": "bertimbau-fakenews-v4",
     "model_sha256": "...",
     "rules": "1.0",
-    "code": "d972474"
+    "code": "251f63c"
   }
 }
 ```

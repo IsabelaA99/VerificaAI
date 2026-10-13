@@ -159,27 +159,12 @@ REST_FRAMEWORK = {
     "DEFAULT_AUTHENTICATION_CLASSES": ["rest_framework.authentication.SessionAuthentication"],
     "DEFAULT_PERMISSION_CLASSES": ["rest_framework.permissions.AllowAny"],
     "EXCEPTION_HANDLER": "analysis.api.errors.api_exception_handler",
-    # Throttle personalizado: extensão de navegador é isenta de limite de uso.
-    "DEFAULT_THROTTLE_CLASSES": ["analysis.api.throttling.ExtensionOrAnonThrottle"],
+    "DEFAULT_THROTTLE_CLASSES": ["rest_framework.throttling.AnonRateThrottle"],
     "DEFAULT_THROTTLE_RATES": {"anon": os.environ.get("API_ANON_RATE", "30/min")},
 }
 
 CORS_ALLOWED_ORIGINS = env_list("CORS_ALLOWED_ORIGINS", "")
 CORS_ALLOW_CREDENTIALS = True
-
-# Permite que a extensão de navegador (Chrome / Firefox) acesse a API local.
-# As URLs  moz-extension://  e  chrome-extension://  não são origens HTTP normais;
-# usamos CORS_ALLOWED_ORIGIN_REGEXES para cobrir qualquer ID de extensão.
-CORS_ALLOWED_ORIGIN_REGEXES = [
-    r"^(chrome|moz)-extension://[a-z0-9]+$",
-]
-
-# Headers extras que a extensão precisa enviar
-from corsheaders.defaults import default_headers  # noqa: E402
-CORS_ALLOW_HEADERS = list(default_headers) + [
-    "x-client-source",
-    "x-visitor-id",
-]
 
 
 # --------------------------------------------------------------------------- #
