@@ -1,6 +1,17 @@
+/**
+ * content.js — ApuraWeb Browser Extension
+ *
+ * Roda no contexto da página. Escuta a mensagem `extract_content` do popup
+ * e responde com o conteúdo principal da página já limpo, pronto para o BERT.
+ *
+ * Compatível com Chrome (Manifest V3) e Firefox (Manifest V3 / WebExtensions).
+ */
 (() => {
-    // Escuta comandos enviados pelo popup
-    chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
+    // Evita registrar o listener mais de uma vez se o script for injetado duas vezes.
+    if (window.__apuraContentScriptLoaded) return;
+    window.__apuraContentScriptLoaded = true;
+
+    chrome.runtime.onMessage.addListener((request, _sender, sendResponse) => {
         if (request.action === 'extract_content') {
             try {
                 const articleData = extractMainContent();
@@ -9,45 +20,88 @@
                 sendResponse({ success: false, error: err.message });
             }
         }
-        return true; // Mantém o canal de resposta aberto para retorno assíncrono
+        // Retorna true para manter o canal de resposta aberto (assíncrono no Firefox)
+        return true;
     });
 
     function extractMainContent() {
-        // 1. Título do artigo
-        let title = document.querySelector('h1')?.innerText || document.title || '';
+        // --- Título ---
+        // Prioridade: og:title > <h1> > <title>
+        const ogTitle = document.querySelector('meta[property="og:title"]')?.getAttribute('content');
+        const h1Title = document.querySelector('article h1, main h1, h1')?.innerText;
+        const title = (ogTitle || h1Title || document.title || '').trim();
 
-        // 2. Clona o documento para manipular e limpar sem afetar a página ativa
+        // --- Clona o body para não modificar a página ao vivo ---
         const clone = document.body.cloneNode(true);
 
-        // 3. Remove elementos indesejados (Anúncios, Menus, Footers, Sidebars)
-        const selectorsToRemove = [
+        // --- Remove elementos irrelevantes ---
+        const elementsToRemove = [
             'header', 'footer', 'nav', 'aside',
-            '.sidebar', '#sidebar', '.menu', '#menu',
-            '.ads', '.ad', '.advertisement', '.social-share',
-            'script', 'style', 'iframe', 'noscript'
+            '[role="navigation"]', '[role="banner"]', '[role="contentinfo"]',
+            '[role="complementary"]', '[role="search"]',
+            '.sidebar', '#sidebar', '.side-bar', '#side-bar',
+            '.menu', '#menu', '.nav', '#nav',
+            '.ads', '.ad', '.advertisement', '.adsbygoogle',
+            '.social', '.social-share', '.share', '.sharing',
+            '.comments', '#comments', '.comment-section',
+            '.related', '.related-posts', '.recommended',
+            '.subscription', '.newsletter', '.popup',
+            '.cookie', '.cookie-banner', '.gdpr',
+            'script', 'style', 'iframe', 'noscript', 'figure > figcaption',
         ];
 
-        selectorsToRemove.forEach(selector => {
-            clone.querySelectorAll(selector).forEach(el => el.remove());
+        elementsToRemove.forEach(selector => {
+            try {
+                clone.querySelectorAll(selector).forEach(el => el.remove());
+            } catch (_) { /* seletor inválido — ignora */ }
         });
 
-        // 4. Seleção estratégica do contêiner do artigo
-        let container = clone.querySelector('article, [role="main"], main, .post-content, .article-content, .content');
-        if (!container) {
-            container = clone;
+        // --- Encontra o contêiner principal do artigo ---
+        // Prioridade: og:url aponta para a página; usamos sinais semânticos.
+        const candidates = [
+            'article[class*="article"]', 'article[class*="post"]',
+            '[role="main"] article', '[role="main"]',
+            'main article', 'main',
+            '.article-body', '.article-content', '.article-text',
+            '.post-body', '.post-content', '.post-text',
+            '.entry-content', '.entry-body',
+            '.story-body', '.story-content',
+            '.content-body', '.page-content',
+            '#article-body', '#content',
+            'article',
+        ];
+
+        let container = null;
+        for (const selector of candidates) {
+            const el = clone.querySelector(selector);
+            if (el && el.innerText && el.innerText.trim().length > 200) {
+                container = el;
+                break;
+            }
+        }
+        if (!container) container = clone;
+
+        // --- Coleta parágrafos significativos ---
+        // Mínimo 40 chars para eliminar avisos de cookies, legendas e fragmentos.
+        const paragraphs = Array.from(container.querySelectorAll('p, blockquote, li'))
+            .map(p => p.innerText?.trim() || '')
+            .filter(text => text.length > 40);
+
+        // Fallback: texto bruto do contêiner se não encontrar parágrafos suficientes
+        let mainContent = paragraphs.join('\n\n');
+        if (mainContent.length < 100) {
+            mainContent = (container.innerText || '').trim();
         }
 
-        // 5. Coleta parágrafos significativos para alimentar o BERT
-        const paragraphs = Array.from(container.querySelectorAll('p'))
-            .map(p => p.innerText.trim())
-            .filter(text => text.length > 30); // Descarta avisos de cookies ou frases curtas
-
-        const mainContent = paragraphs.join('\n\n');
+        // Limita para não ultrapassar o MAX_CHARS do servidor (20.000)
+        if (mainContent.length > 19000) {
+            mainContent = mainContent.slice(0, 19000);
+        }
 
         return {
-            title: title.trim(),
+            title,
             content: mainContent,
-            url: window.location.href
+            url: window.location.href,
         };
     }
 })();

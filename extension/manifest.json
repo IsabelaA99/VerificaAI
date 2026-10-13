@@ -1,8 +1,8 @@
 {
     "manifest_version": 3,
-    "name": "ApuraWeb",
-    "version": "1.0.0",
-    "description": "Verificação da confiabilidade de notícias e artigos usando IA.",
+    "name": "ApuraWeb — Verificador de Notícias",
+    "version": "1.1.0",
+    "description": "Verifica a confiabilidade de notícias e artigos usando IA. Conecta ao servidor Apura local.",
     "permissions": [
         "activeTab",
         "scripting"
@@ -10,20 +10,20 @@
     "host_permissions": [
         "http://127.0.0.1:8000/*",
         "http://localhost:8000/*",
-        "https://*/*"
+        "https://*/*",
+        "http://*/*"
     ],
     "action": {
         "default_popup": "popup.html",
-        "default_icon": {
-            "128": "icons/icon128.png"
-        }
+        "default_title": "ApuraWeb — Verificar esta página"
     },
-    "icons": {
-        "128": "icons/icon128.png"
+    "content_security_policy": {
+        "extension_pages": "default-src 'self'; style-src 'self' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com; connect-src http://127.0.0.1:8000 http://localhost:8000; img-src 'self' data:; script-src 'self'"
     },
     "browser_specific_settings": {
         "gecko": {
-            "id": "puraweb-verificai@extension.local"
+            "id": "apuraweb-verificai@extension.local",
+            "strict_min_version": "109.0"
         }
     }
 }
