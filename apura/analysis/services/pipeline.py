@@ -41,11 +41,16 @@ def code_version() -> str:
         return "desconhecido"
 
 
-def _limitations(news: NewsInput, cls, rules: risk.Rules, evidence_enabled: bool) -> list[str]:
+def _limitations(
+    news: NewsInput, cls, rules: risk.Rules, evidence_enabled: bool,
+    consensus_divergent: bool = False,
+) -> list[str]:
     items = [
         "O resultado é um apoio à avaliação e não substitui a verificação em fontes confiáveis.",
         "O índice de risco é um indicador probabilístico e não representa certeza factual absoluta.",
     ]
+    if consensus_divergent:
+        items.append("Atenção: A redação formal do texto pode apresentar padrão jornalístico culto no modelo de linguagem, mas o conteúdo da tese diverge do consenso histórico/científico documentado.")
     if not evidence_enabled:
         items.append("A consulta a fontes externas ainda não está habilitada; nenhuma evidência foi verificada.")
     if not rules.calibrator.get("calibrated", False):
@@ -95,6 +100,19 @@ def _execute_pipeline(
     )
 
     # 5. Cálculo do Índice de Risco Ponderado
+    sem_comp = getattr(llm_res, "semantic_comparison", {}) or {}
+    consensus_status = sem_comp.get("consensus_status", "sem_consenso_ou_debate")
+    discourse_type = getattr(llm_res, "discourse_type", "factual")
+
+    # Se não houver fact-checks indexados na API externa, a comparação semântica com o consenso supre o sinal de evidência
+    if evidence_conflict is None:
+        if consensus_status == "diverge_consenso":
+            evidence_conflict = 0.90
+        elif discourse_type == "conspiracy_or_theoretical":
+            evidence_conflict = 0.75
+        elif consensus_status == "conforme_consenso":
+            evidence_conflict = 0.05
+
     signals = {
         "model_fake_probability": cls.fake_probability,
         "linguistic_indicators": ling["signal"],
@@ -103,7 +121,7 @@ def _execute_pipeline(
     risk_info = risk.compute_risk_index(signals, rules.weights)
 
     # 6. Regra de Abstenção Probabilística (RF14)
-    evidence_available = bool(fact_res.get("sources"))
+    evidence_available = bool(fact_res.get("sources")) or (evidence_conflict is not None)
     reasons = risk.abstention_reasons(
         rules=rules,
         model_confidence=cls.confidence,
@@ -114,6 +132,13 @@ def _execute_pipeline(
         status = risk.STATUS_INCONCLUSIVE
     else:
         status = risk.status_for_index(risk_info["value"], rules)
+
+    # Salvaguarda epistemológica: matérias que divergem do consenso ou veiculam teorias conspiratórias
+    # não podem receber o selo ingênuo de "poucos sinais de risco" apenas pelo estilo culto da redação
+    if (consensus_status == "diverge_consenso" or discourse_type == "conspiracy_or_theoretical") and status == risk.STATUS_LOW:
+        status = risk.STATUS_ATTENTION
+        if risk_info["value"] is not None and risk_info["value"] <= rules.low_max:
+            risk_info["value"] = round(rules.low_max + 10.0, 2)
 
     technical = {
         "classification": cls.to_dict(),
@@ -153,7 +178,10 @@ def _execute_pipeline(
             "subtitle_provided": bool(news.subtitle),
             "characters": len(news.full_text),
         },
-        "limitations": _limitations(news, cls, rules, evidence_enabled=True),
+        "limitations": _limitations(
+            news, cls, rules, evidence_enabled=True,
+            consensus_divergent=(consensus_status == "diverge_consenso"),
+        ),
     }
 
     analysis = Analysis.objects.create(

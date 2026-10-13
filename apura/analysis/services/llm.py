@@ -131,7 +131,7 @@ def _parse_llm_json(parsed: dict[str, Any], provider: str) -> LLMExplanation:
 
 
 def _call_gemini(prompt: str, api_key: str) -> LLMExplanation | None:
-    for model_name in ("gemini-2.0-flash", "gemini-1.5-flash"):
+    for model_name in ("gemini-2.5-flash", "gemini-2.0-flash", "gemini-1.5-flash"):
         url = f"https://generativelanguage.googleapis.com/v1beta/models/{model_name}:generateContent?key={api_key}"
         payload = {
             "contents": [{"parts": [{"text": prompt}]}],
@@ -154,28 +154,29 @@ def _call_gemini(prompt: str, api_key: str) -> LLMExplanation | None:
 
 
 def _call_groq(prompt: str, api_key: str) -> LLMExplanation | None:
-    url = "https://api.groq.com/openai/v1/chat/completions"
-    headers = {"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"}
-    payload = {
-        "model": "llama-3.3-70b-versatile",
-        "messages": [
-            {"role": "system", "content": "Você é um perito em análise do discurso, checagem epistemológica e detecção de teorias conspiratórias e fake news. Responda em JSON válido."},
-            {"role": "user", "content": prompt},
-        ],
-        "response_format": {"type": "json_object"},
-        "temperature": 0.0,
-    }
-    try:
-        resp = requests.post(url, headers=headers, json=payload, timeout=9)
-        if resp.status_code == 200:
-            data = resp.json()
-            content = data["choices"][0]["message"]["content"]
-            parsed = json.loads(content)
-            return _parse_llm_json(parsed, provider="Groq (llama-3.3-70b-versatile)")
-        else:
-            logger.warning("Groq retornou status %d: %s", resp.status_code, resp.text[:200])
-    except Exception:
-        logger.exception("Falha na chamada ao Groq API")
+    for model_name in ("llama-3.3-70b-versatile", "llama-3.1-70b-versatile", "llama-3.1-8b-instant"):
+        url = "https://api.groq.com/openai/v1/chat/completions"
+        headers = {"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"}
+        payload = {
+            "model": model_name,
+            "messages": [
+                {"role": "system", "content": "Você é um perito em análise do discurso, checagem epistemológica e detecção de teorias conspiratórias e fake news. Responda em JSON válido."},
+                {"role": "user", "content": prompt},
+            ],
+            "response_format": {"type": "json_object"},
+            "temperature": 0.0,
+        }
+        try:
+            resp = requests.post(url, headers=headers, json=payload, timeout=9)
+            if resp.status_code == 200:
+                data = resp.json()
+                content = data["choices"][0]["message"]["content"]
+                parsed = json.loads(content)
+                return _parse_llm_json(parsed, provider=f"Groq ({model_name})")
+            else:
+                logger.warning("Groq (%s) retornou status %d: %s", model_name, resp.status_code, resp.text[:200])
+        except Exception:
+            logger.exception("Falha na chamada ao Groq API (%s)", model_name)
     return None
 
 

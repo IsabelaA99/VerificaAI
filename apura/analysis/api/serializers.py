@@ -57,6 +57,13 @@ def _explanation(obj: Analysis) -> list[str]:
     if llm_info.get("key_points"):
         items.extend(llm_info["key_points"])
 
+    sem_comp = llm_info.get("semantic_comparison") or {}
+    if sem_comp.get("consensus_summary") and not any(sem_comp["consensus_summary"][:30] in it for it in items):
+        if sem_comp.get("consensus_status") == "diverge_consenso":
+            items.append(f"Confronto com o consenso: {sem_comp['consensus_summary']}")
+        elif sem_comp.get("consensus_status") == "conforme_consenso":
+            items.append(f"Consenso factual: {sem_comp['consensus_summary']}")
+
     if not llm_info:
         if obj.model_label == "falsa":
             items.append("O padrão de escrita do texto se parece com o de notícias falsas vistas no treinamento do modelo.")

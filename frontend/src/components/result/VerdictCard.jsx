@@ -60,6 +60,9 @@ export default function VerdictCard({ analysis }) {
         const sem = model.semanticComparison || {}
         const lex = model.lexicalAnalysis || {}
         const hedging = lex.hedging_terms || []
+        const divergesFromConsensus = sem.consensus_status === 'diverge_consenso'
+        const isConspiracy = model.discourseType === 'conspiracy_or_theoretical'
+        const isDiscrepant = (divergesFromConsensus || isConspiracy) && truePct >= 50
 
         return (
           <div className="model-prob-card">
@@ -84,6 +87,11 @@ export default function VerdictCard({ analysis }) {
                     </>
                   )}
                 </p>
+                {isDiscrepant ? (
+                  <p className="model-prob-card__subheadline">
+                    Padrão de redação jornalística (estilo) · Conteúdo contestado pelo consenso histórico
+                  </p>
+                ) : null}
               </div>
               {model.confidence !== null ? (
                 <span className="model-prob-card__confidence">
@@ -119,13 +127,23 @@ export default function VerdictCard({ analysis }) {
               </span>
             </div>
 
-            {/* Alertas Expositivos de Margem e Risco */}
-            {isUncertainZone ? (
+            {/* Alertas Expositivos de Margem, Risco e Discrepância */}
+            {isDiscrepant ? (
+              <div className="model-prob-card__alert model-prob-card__alert--danger">
+                <strong>Alerta de Discrepância (Estilo Formal vs Consenso Histórico):</strong>
+                <span>
+                  O classificador textual atribuiu alta probabilidade de formato jornalístico legítimo ({formatPercent(trueRatio)}) devido à pontuação correta e menção a órgãos oficiais. No entanto, a análise de conteúdo constatou que o texto veicula <strong>teorias especulativas que divergem do consenso historiográfico consolidado</strong>. A qualidade gramatical da redação não comprova a veracidade da tese.
+                </span>
+                {model.uncertaintyWarning ? (
+                  <span className="model-prob-card__alert-note">{model.uncertaintyWarning}</span>
+                ) : null}
+              </div>
+            ) : isUncertainZone ? (
               <div className="model-prob-card__alert model-prob-card__alert--warning">
                 <strong>Atenção à margem estatística ({formatPercent(trueRatio)}):</strong>
                 <span>
                   {model.uncertaintyWarning ||
-                    'Uma probabilidade próxima a 50% reflete alta incerteza do classificador. É frequente em artigos de opinião, ensaios teóricos ou especulações com linguagem culta. Não considere esta porcentagem como atestado de veracidade.'}
+                    `Uma probabilidade de ${formatPercent(trueRatio)} (com ${formatPercent(fakeRatio)} de chance de falsidade) reflete alta incerteza do classificador. É frequente em artigos de opinião, ensaios teóricos ou especulações com linguagem culta. Não considere esta porcentagem como atestado de veracidade.`}
                 </span>
               </div>
             ) : isHighRisk ? (
@@ -137,7 +155,7 @@ export default function VerdictCard({ analysis }) {
                 </span>
               </div>
             ) : model.uncertaintyWarning ? (
-              <div className="model-prob-card__alert model-prob-card__alert--info">
+              <div className="model-prob-card__alert model-prob-card__alert--warning">
                 <strong>Nota do Especialista:</strong>
                 <span>{model.uncertaintyWarning}</span>
               </div>
