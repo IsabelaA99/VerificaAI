@@ -107,16 +107,20 @@ def _execute_pipeline(
 
     is_traditional = llm.is_traditional_press_domain(source_domain)
     has_conflicting = any(s.get("relation") == "conflicting" for s in fact_res.get("sources", []))
+    is_satire = (discourse_type == "satira") or llm.is_satirical_domain(source_domain)
 
-    if is_traditional and not has_conflicting:
+    # Identifica conteúdo factual em-domínio: imprensa tradicional ou texto com alta probabilidade/confiança factual
+    is_in_domain_factual = (is_traditional or (cls.fake_probability < 0.25 and cls.confidence > 0.80)) and not is_satire and discourse_type != "teoria_conspiratoria"
+
+    if is_in_domain_factual and not has_conflicting:
         consensus_status = "conforme_consenso"
         discourse_type = "factual"
 
     # Se não houver fact-checks indexados na API externa, a comparação semântica com o consenso só supre evidência
-    # para conteúdos conspiratórios fora de domínio, NUNCA sobrepondo a imprensa tradicional
+    # para conteúdos conspiratórios fora de domínio, NUNCA sobrepondo a imprensa tradicional nem relatos factuais
     if evidence_conflict is None:
-        if not is_traditional:
-            if consensus_status == "diverge_consenso" or discourse_type in ("teoria_conspiratoria", "conspiracy_or_theoretical"):
+        if not is_in_domain_factual:
+            if consensus_status == "diverge_consenso" or discourse_type in ("teoria_conspiratoria", "conspiracy_or_theoretical", "satira"):
                 evidence_conflict = 0.90
             elif consensus_status == "conforme_consenso":
                 evidence_conflict = 0.05
@@ -141,25 +145,37 @@ def _execute_pipeline(
     else:
         status = risk.status_for_index(risk_info["value"], rules)
 
-    # Salvaguarda epistemológica: aplicada EXCLUSIVAMENTE para teorias conspiratórias reais fora de domínio
-    # ou matérias com checagem conflitante comprovada. NUNCA sobrepor matérias da imprensa tradicional.
-    if not is_traditional and (has_conflicting or discourse_type in ("teoria_conspiratoria", "conspiracy_or_theoretical")):
+    # Salvaguarda epistemológica: aplicada EXCLUSIVAMENTE para teorias conspiratórias reais fora de domínio,
+    # sátiras/paródias fictícias ou matérias com checagem conflitante comprovada. NUNCA sobrepor matérias factuais.
+    if not is_in_domain_factual and (has_conflicting or discourse_type in ("teoria_conspiratoria", "conspiracy_or_theoretical", "satira")):
         if status == risk.STATUS_LOW:
             status = risk.STATUS_ATTENTION
             if risk_info["value"] is not None and risk_info["value"] <= rules.low_max:
                 risk_info["value"] = round(rules.low_max + 10.0, 2)
 
     is_out_of_domain = bool(
-        not is_traditional and (
-            discourse_type in ("teoria_conspiratoria", "conspiracy_or_theoretical") or
-            (consensus_status == "diverge_consenso" and cls.fake_probability < 0.35 and has_conflicting)
+        not is_in_domain_factual and (
+            discourse_type in ("teoria_conspiratoria", "conspiracy_or_theoretical", "satira") or
+            (consensus_status == "diverge_consenso" and cls.fake_probability < 0.35 and (has_conflicting or discourse_type == "satira"))
         )
     )
-    training_scope = "out_of_domain_conspiracy" if is_out_of_domain else ("in_domain_press" if is_traditional else "in_domain_general")
+    if discourse_type == "satira":
+        training_scope = "out_of_domain_satire"
+    elif is_out_of_domain:
+        training_scope = "out_of_domain_conspiracy"
+    elif is_traditional:
+        training_scope = "in_domain_press"
+    else:
+        training_scope = "in_domain_general"
 
     cls_dict = cls.to_dict()
     cls_dict["is_out_of_domain"] = is_out_of_domain
     cls_dict["training_scope"] = training_scope
+
+    claim_summary_masked = summarize_claim(news)
+    sem_comp_clean = dict(getattr(llm_res, "semantic_comparison", {}) or {})
+    if "claim_analyzed" in sem_comp_clean:
+        sem_comp_clean["claim_analyzed"] = claim_summary_masked
 
     technical = {
         "classification": cls_dict,
@@ -187,7 +203,7 @@ def _execute_pipeline(
             "verdict_tendency": llm_res.verdict_tendency,
             "discourse_type": getattr(llm_res, "discourse_type", "factual"),
             "discourse_label": getattr(llm_res, "discourse_label", "Relato Factual"),
-            "semantic_comparison": getattr(llm_res, "semantic_comparison", {}),
+            "semantic_comparison": sem_comp_clean,
             "lexical_analysis": getattr(llm_res, "lexical_analysis", {}),
             "uncertainty_warning": getattr(llm_res, "uncertainty_warning", ""),
         },

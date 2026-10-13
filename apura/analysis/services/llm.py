@@ -101,14 +101,16 @@ def _build_prompt(
         f"Termos apelativos detectados: {', '.join(sensational) if sensational else 'Nenhum'}\n\n"
         f"--- EVIDÊNCIAS DE CHECAGEM EXTERNA / INTERNET ---\n"
         f"{sources_text}\n\n"
-        "--- DIRETRIZES DE ESPECIALISTA ---\n"
-        "1. DISTINGA FORMA DE CONTEÚDO: Um texto pode ter gramática perfeita, estilo formal ou citar instituições de autoridade (ex.: 'FBI liberou arquivo', 'cientistas sugerem'), mas tratar de mera TEORIA CONSPIRATÓRIA / ESPECULAÇÃO HISTÓRICA não comprovada, ou de um ARTIGO DE OPINIÃO / DEBATE DOUTRINÁRIO.\n"
+        "1. DISTINGA FORMA DE CONTEÚDO: Um texto pode ter gramática perfeita, estilo formal ou citar autoridades, mas tratar de:\n"
+        "   - TEORIA CONSPIRATÓRIA / ESPECULAÇÃO HISTÓRICA não comprovada;\n"
+        "   - ARTIGO DE OPINIÃO / DEBATE DOUTRINÁRIO;\n"
+        "   - SÁTIRA / HUMOR JORNALÍSTICO (ex.: Laranjas News, Sensacionalista, The Onion que simulam notícias formais com fatos fictícios e cômicos). Se for sátira/humor, classifique OBRIGATORIAMENTE discourse_type como 'satira' e consensus_status como 'diverge_consenso'.\n"
         "2. COMPARAÇÃO SEMÂNTICA COM O CONSENSO: Confronte a alegação central com o consenso histórico, científico e pericial consolidado.\n"
         "3. ANÁLISE LÉXICA DE ESPECULAÇÃO (HEDGING): Identifique expressões de dúvida calculada ('fortalecem teoria', 'documentos sugerem', 'supostamente', 'fontes alegam', 'há quem diga').\n"
         "4. ALERTA DE INCERTEZA: Se a probabilidade do modelo estiver próxima a 50% (ex.: entre 45% e 65%) ou se o texto usar formalidade para mascarar falta de provas, emita um alerta expositivo claro explicando que a probabilidade não atesta veracidade.\n\n"
         "Retorne OBRIGATORIAMENTE um JSON estrito no seguinte formato:\n"
         "{\n"
-        '  "summary": "Resumo analítico explicando com rigor se a notícia é falsa, verdadeira, conspiratória ou opinativa.",\n'
+        '  "summary": "Resumo analítico explicando com rigor se a notícia é falsa, verdadeira, conspiratória, opinativa ou satírica.",\n'
         '  "key_points": [\n'
         '    "Ponto 1: Análise da redação e estilo",\n'
         '    "Ponto 2: Confronto com fatos e fontes oficiais",\n'
@@ -116,7 +118,7 @@ def _build_prompt(
         '  ],\n'
         '  "verdict_tendency": "alto_risco_falsa" ou "baixo_risco_verdadeira" ou "inconclusiva",\n'
         '  "discourse_type": "teoria_conspiratoria" ou "opiniao_ensaio" ou "factual" ou "sensacionalismo" ou "satira",\n'
-        '  "discourse_label": "Teoria Especulativa / Conspiratória" ou "Artigo de Opinião / Debate Doutrinário" ou "Relato Factual" ou "Sensacionalismo",\n'
+        '  "discourse_label": "Teoria Especulativa / Conspiratória" ou "Artigo de Opinião / Debate Doutrinário" ou "Relato Factual" ou "Sensacionalismo" ou "Sátira / Humor Jornalístico",\n'
         '  "semantic_comparison": {\n'
         '    "claim_analyzed": "Alegação central identificada",\n'
         '    "consensus_status": "conforme_consenso" ou "diverge_consenso" ou "sem_consenso_opiniao" ou "nao_verificado",\n'
@@ -133,6 +135,15 @@ def _build_prompt(
     )
 
 
+def is_satirical_domain(domain: str) -> bool:
+    """Verifica se o domínio é conhecido por publicar sátiras, humor ou paródias fictícias."""
+    if not domain:
+        return False
+    domain = domain.lower().strip()
+    keywords = ("laranjas", "sensacionalista", "theonion", "babylonbee", "piauiconherald", "humor")
+    return any(k in domain for k in keywords)
+
+
 def _parse_llm_json(parsed: dict[str, Any], provider: str, source_domain: str = "") -> LLMExplanation:
     semantic = parsed.get("semantic_comparison")
     if not isinstance(semantic, dict):
@@ -145,8 +156,28 @@ def _parse_llm_json(parsed: dict[str, Any], provider: str, source_domain: str = 
     if not isinstance(lexical, dict):
         lexical = {}
 
-    is_traditional = is_traditional_press_domain(source_domain)
-    if is_traditional:
+    summary_lower = str(parsed.get("summary", "")).lower()
+    discourse_raw = str(parsed.get("discourse_type", "factual")).lower()
+    is_traditional = is_traditional_press_domain(source_domain) and not is_satirical_domain(source_domain)
+
+    if (
+        is_satirical_domain(source_domain)
+        or any(k in discourse_raw for k in ("satir", "humor", "parod", "fictici", "comedi", "piada"))
+        or "satíric" in summary_lower
+        or "sátira" in summary_lower
+        or "paródia" in summary_lower
+    ):
+        discourse_type = "satira"
+        discourse_label = "Sátira / Humor Jornalístico"
+        if isinstance(semantic, dict):
+            semantic["consensus_status"] = "diverge_consenso"
+            if not semantic.get("consensus_summary"):
+                semantic["consensus_summary"] = "O conteúdo é uma peça de humor/sátira ficcional sem correspondência com fatos reais."
+        uncertainty_warning = (
+            "Atenção: Conteúdo satírico / paródia de humor. O modelo BERTimbau avalia apenas a norma culta "
+            "do estilo jornalístico, mas os fatos narrados são intencionalmente fictícios."
+        )
+    elif is_traditional:
         discourse_type = "factual"
         discourse_label = "Relato Factual"
         semantic["consensus_status"] = "conforme_consenso"
@@ -154,7 +185,6 @@ def _parse_llm_json(parsed: dict[str, Any], provider: str, source_domain: str = 
             semantic["consensus_summary"] = "Compatível com a cobertura factual da imprensa tradicional."
         uncertainty_warning = ""
     else:
-        discourse_raw = str(parsed.get("discourse_type", "factual")).lower()
         if any(k in discourse_raw for k in ("conspir", "especul", "boato")):
             discourse_type = "teoria_conspiratoria"
             discourse_label = "Teoria Especulativa / Conspiratória"
@@ -289,9 +319,17 @@ def _synthesize_deterministic(
     detected_hedging = [p for p in hedging_patterns if p in full_text_lower]
 
     # 2. Detecção de Tipologia Discursiva (termos explícitos e inequívocos)
-    if is_traditional:
+    is_satire = is_satirical_domain(source_domain) or any(k in full_text_lower for k in ("laranjas", "sensacionalista", "sátira", "satira"))
+    if is_satire:
         is_conspiracy = False
         is_opinion = False
+        discourse_type = "satira"
+        discourse_label = "Sátira / Humor Jornalístico"
+    elif is_traditional:
+        is_conspiracy = False
+        is_opinion = False
+        discourse_type = "factual"
+        discourse_label = "Relato Factual"
     else:
         is_conspiracy = any(k in full_text_lower for k in [
             "fuga de hitler", "hitler fugiu para", "teoria da conspiracao", "teoria da conspiração",
@@ -304,21 +342,28 @@ def _synthesize_deterministic(
             "artigo de opinião", "na minha visao", "na minha visão", "filosofia politica"
         ])
 
-    if is_conspiracy:
-        discourse_type = "teoria_conspiratoria"
-        discourse_label = "Teoria Especulativa / Conspiratória"
-    elif is_opinion:
-        discourse_type = "opiniao_ensaio"
-        discourse_label = "Artigo de Opinião / Debate Doutrinário"
-    elif not is_traditional and (sensational or prob_pct >= 70):
-        discourse_type = "sensacionalismo"
-        discourse_label = "Sensacionalismo / Apelativo"
-    else:
-        discourse_type = "factual"
-        discourse_label = "Relato Factual"
+        if is_conspiracy:
+            discourse_type = "teoria_conspiratoria"
+            discourse_label = "Teoria Especulativa / Conspiratória"
+        elif is_opinion:
+            discourse_type = "opiniao_ensaio"
+            discourse_label = "Artigo de Opinião / Debate Doutrinário"
+        elif not is_traditional and (sensational or prob_pct >= 70):
+            discourse_type = "sensacionalismo"
+            discourse_label = "Sensacionalismo / Apelativo"
+        else:
+            discourse_type = "factual"
+            discourse_label = "Relato Factual"
 
     # 3. Comparação Semântica e Consenso Histórico/Científico
-    if is_conspiracy:
+    if is_satire:
+        consensus_status = "diverge_consenso"
+        consensus_summary = "O conteúdo é uma peça de humor/sátira ficcional sem correspondência com fatos reais."
+        uncertainty_warning = (
+            "Atenção: Conteúdo satírico / paródia de humor. O modelo avalia apenas a forma culta da escrita, "
+            "mas a alegação é ficcional."
+        )
+    elif is_conspiracy:
         consensus_status = "diverge_consenso"
         if "hitler" in full_text_lower:
             consensus_summary = (

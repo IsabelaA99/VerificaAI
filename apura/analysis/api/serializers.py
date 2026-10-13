@@ -126,7 +126,11 @@ class AnalysisResultSerializer(serializers.ModelSerializer):
         cls = (obj.technical or {}).get("classification", {})
         llm_info = (obj.technical or {}).get("llm_analysis", {})
         discourse_type = llm_info.get("discourse_type", "factual")
-        is_out_of_domain = discourse_type in ("conspiracy_or_theoretical", "opinion")
+        is_out_of_domain = cls.get(
+            "is_out_of_domain",
+            discourse_type in ("conspiracy_or_theoretical", "teoria_conspiratoria", "satira", "opinion")
+        )
+        training_scope = cls.get("training_scope", "in_domain_general")
         return {
             "label": obj.model_label,
             "fake_probability": obj.model_fake_probability,
@@ -135,7 +139,7 @@ class AnalysisResultSerializer(serializers.ModelSerializer):
             "discourse_type": discourse_type,
             "discourse_label": llm_info.get("discourse_label", "Relato Factual"),
             "is_out_of_domain": is_out_of_domain,
-            "training_scope": "Treinado com veículos da imprensa tradicional (reconhecimento de estilo jornalístico).",
+            "training_scope": training_scope,
             "semantic_comparison": llm_info.get("semantic_comparison") or {},
             "lexical_analysis": llm_info.get("lexical_analysis") or {},
             "uncertainty_warning": llm_info.get("uncertainty_warning", ""),

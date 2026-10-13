@@ -61,10 +61,11 @@ export default function VerdictCard({ analysis }) {
         const lex = model.lexicalAnalysis || {}
         const hedging = lex.hedging_terms || []
         const isOutOfDomain = Boolean(model.isOutOfDomain)
+        const isSatire = model.discourseType === 'satira' || model.trainingScope === 'out_of_domain_satire'
         const isConspiracy = model.discourseType === 'teoria_conspiratoria' || model.discourseType === 'conspiracy_or_theoretical'
-        const isTraditionalPress = model.trainingScope === 'in_domain_press' || model.discourseType === 'factual'
+        const isTraditionalPress = (model.trainingScope === 'in_domain_press' || model.discourseType === 'factual') && !isSatire && !isConspiracy
         const divergesFromConsensus = sem.consensus_status === 'diverge_consenso' && !isTraditionalPress
-        const isDiscrepant = (isOutOfDomain || isConspiracy) && truePct >= 50 && !isTraditionalPress
+        const isDiscrepant = (isOutOfDomain || isConspiracy || isSatire) && truePct >= 50 && !isTraditionalPress
 
         return (
           <div className="model-prob-card">
@@ -96,7 +97,9 @@ export default function VerdictCard({ analysis }) {
                 </p>
                 {isDiscrepant ? (
                   <p className="model-prob-card__subheadline">
-                    Padrão de redação da imprensa tradicional (estilo) · Conteúdo contestado por checagens
+                    {isSatire
+                      ? 'Padrão de redação formal simulado · Conteúdo humorístico e fictício'
+                      : 'Padrão de redação da imprensa tradicional (estilo) · Conteúdo contestado por checagens'}
                   </p>
                 ) : null}
               </div>
@@ -137,10 +140,21 @@ export default function VerdictCard({ analysis }) {
             {/* Alertas Expositivos de Margem, Risco e Discrepância */}
             {isDiscrepant ? (
               <div className="model-prob-card__alert model-prob-card__alert--danger">
-                <strong>Atenção: Modelo Treinado em Imprensa Tradicional · Use o Fact-Checking:</strong>
-                <span>
-                  O classificador BERTimbau foi treinado exclusivamente com matérias da imprensa tradicional (reconhecimento de formato formal jornalístico). Ele não foi treinado para validar teorias históricas ou conspiratórias. Portanto, a probabilidade calculada ({formatPercent(trueRatio)}) avalia apenas o estilo textual da escrita. A verificação factual deste conteúdo depende prioritariamente das <strong>Checagens de Fatos (Fact-Checking)</strong> e do consenso histórico documentado.
-                </span>
+                {isSatire ? (
+                  <>
+                    <strong>Atenção: Conteúdo Satírico / Paródia Ficcional:</strong>
+                    <span>
+                      Este texto foi identificado como <strong>Sátira / Humor</strong>. O classificador BERTimbau avalia apenas a forma da escrita (redação culta de estilo jornalístico), o que explica a probabilidade calculada ({formatPercent(trueRatio)} de padrão formal). No entanto, os fatos descritos são intencionalmente fictícios e cômicos, sem respaldo na realidade factual.
+                    </span>
+                  </>
+                ) : (
+                  <>
+                    <strong>Atenção: Modelo Treinado em Imprensa Tradicional · Use o Fact-Checking:</strong>
+                    <span>
+                      O classificador BERTimbau foi treinado exclusivamente com matérias da imprensa tradicional (reconhecimento de formato formal jornalístico). Ele não foi treinado para validar teorias históricas ou conspiratórias. Portanto, a probabilidade calculada ({formatPercent(trueRatio)}) avalia apenas o estilo textual da escrita. A verificação factual deste conteúdo depende prioritariamente das <strong>Checagens de Fatos (Fact-Checking)</strong> e do consenso histórico documentado.
+                    </span>
+                  </>
+                )}
                 {model.uncertaintyWarning ? (
                   <span className="model-prob-card__alert-note">{model.uncertaintyWarning}</span>
                 ) : null}
