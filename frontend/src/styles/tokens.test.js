@@ -171,8 +171,8 @@ describe('tamanhos e proporções', () => {
     expect(rem('--target-min') * 16).toBeGreaterThanOrEqual(48)
   })
 
-  it('o texto nunca é menor que 14 px, exceto o rótulo em caixa alta e negrito', () => {
-    expect(rem('--text-small') * 16).toBeGreaterThanOrEqual(14)
+  it('o texto nunca é menor que 15 px, exceto o rótulo em caixa alta e negrito', () => {
+    expect(rem('--text-small') * 16).toBeGreaterThanOrEqual(15)
     expect(rem('--text-ui') * 16).toBeGreaterThanOrEqual(16)
     expect(rem('--text-body') * 16).toBeGreaterThanOrEqual(16)
     expect(rem('--text-label') * 16).toBeGreaterThanOrEqual(12)

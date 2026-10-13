@@ -112,12 +112,13 @@ inconclusiva"), além da cor.
 
 - Famílias: **Roboto** (interface e corpo) e **STIX Two Text** (títulos e marca), instaladas pelo
   `@fontsource` e **empacotadas** no site (sem chamada a serviço externo: privacidade e CSP).
-  São as mesmas famílias que o protótipo embutia.
-- Escala (razão 1,25 sobre o corpo de 17 px): 12 · 14 · 16 · 17 · 18 · 21 · 26 · 33 · 41 px, mais
+  São as mesmas famílias que o protótipo embutia. O peso 500 destaca títulos e controles sem
+  deixar a interface tão pesada quanto o peso 700.
+- Escala: 12 · 15 · 16 · 17 · 18 · 21 · 26 · 33 · 41 px, mais
   dois tamanhos fluidos (`--text-h1`: 38 → 52 px; `--text-display`: 46 → 70 px).
 - Tudo em `rem`: respeita o tamanho de fonte escolhido no navegador (WCAG 1.4.4). Nenhuma frase
-  fica abaixo de 14 px; os 12 px são só para rótulos em caixa alta e negrito (um teste confere).
-- Corpo de 17 px no computador e 16 px abaixo de 520 px. Entrelinha do corpo 1,55.
+  fica abaixo de 15 px; os 12 px são só para rótulos em caixa alta e negrito (um teste confere).
+- Corpo de 17 px no computador e 16 px abaixo de 520 px. Entrelinha do corpo 1,6.
 - Quebra de palavra: `overflow-wrap: break-word` no `body`. Não se usa `hyphens: auto` no corpo
   (a hifenização automática em português ainda erra), nem `overflow-wrap: anywhere` (que encolhe
   o tamanho mínimo de itens flex e quebrava palavras curtas).

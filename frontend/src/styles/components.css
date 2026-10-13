@@ -289,7 +289,7 @@
 
 .field__label {
   font-size: var(--text-small);
-  font-weight: var(--weight-bold);
+  font-weight: var(--weight-medium);
   color: var(--color-text);
 }
 
@@ -1106,7 +1106,7 @@
   min-height: var(--target-min);
   border-bottom: 3px solid transparent;
   color: var(--color-text-muted);
-  font-weight: var(--weight-bold);
+  font-weight: var(--weight-medium);
   text-decoration: none;
 }
 
