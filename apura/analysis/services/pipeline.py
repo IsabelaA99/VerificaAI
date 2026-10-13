@@ -280,14 +280,33 @@ def _execute_pipeline(
     return analysis
 
 
-def run_text_analysis(*, text: str, title: str = "", subtitle: str = "", user=None, visitor_id: str = "") -> Analysis:
+def run_text_analysis(
+    *,
+    text: str,
+    title: str = "",
+    subtitle: str = "",
+    source_url: str = "",
+    user=None,
+    visitor_id: str = "",
+) -> Analysis:
     started = time.perf_counter()
     deadline = _request_deadline()
+    source_domain = ""
+    if source_url:
+        try:
+            import urllib.parse
+            parsed = urllib.parse.urlparse(source_url)
+            netloc = (parsed.netloc or "").split(":")[0].lower()
+            if netloc.startswith("www."):
+                netloc = netloc[4:]
+            source_domain = netloc
+        except Exception:
+            source_domain = ""
     news = build_news_input(text=text, title=title, subtitle=subtitle)
     return _execute_pipeline(
         news=news,
         input_type=Analysis.InputType.TEXT,
-        source_domain="",
+        source_domain=source_domain,
         user=user,
         visitor_id=visitor_id,
         started=started,

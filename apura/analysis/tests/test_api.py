@@ -296,3 +296,41 @@ class AnalysisApiTests(TestCase):
         resp = self.client.get(reverse("api-v1:health"))
         self.assertEqual(resp.status_code, 200)
         self.assertEqual(resp.json()["rules_version"], "rules-v1.0.0")
+
+    def test_extension_request_format_and_response(self):
+        classifier_service.set_classifier(FakeClassifier(0.1))
+        payload = {
+            "title": "Notícia raspada da página",
+            "content": PT_TEXT,
+            "url": "https://g1.globo.com/politica/noticia.ghtml",
+            "is_extension": True,
+        }
+        resp = self.client.post(
+            reverse("api-v1:analysis-create"),
+            data=payload,
+            format="json",
+            HTTP_X_CLIENT_SOURCE="browser-extension",
+        )
+        self.assertEqual(resp.status_code, 201)
+        data = resp.json()
+        self.assertEqual(data["status"], "ok")
+        res = data["result"]
+        self.assertEqual(res["verdict_code"], "SAFE")
+        self.assertEqual(res["label"], "Poucos sinais de risco")
+        self.assertEqual(res["model_label"], "Verdadeira")
+        self.assertIn("score", res)
+        self.assertIn("discourse_label", res)
+        self.assertIn("training_scope", res)
+        self.assertIn("semantic_comparison", res)
+        self.assertIn("full_details", res)
+        # Verifica se o source_domain foi extraído para identificar a imprensa tradicional
+        analysis = Analysis.objects.latest("created_at")
+        self.assertEqual((analysis.technical or {}).get("classification", {}).get("training_scope"), "in_domain_press")
+
+    def test_extension_throttle_exempt(self):
+        from rest_framework.test import APIRequestFactory
+        from analysis.api.throttling import ExtensionOrAnonThrottle
+        factory = APIRequestFactory()
+        throttle = ExtensionOrAnonThrottle()
+        req_ext = factory.post("/api/v1/analyses/", HTTP_X_CLIENT_SOURCE="browser-extension")
+        self.assertTrue(throttle.allow_request(req_ext, None))

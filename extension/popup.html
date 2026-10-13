@@ -1,0 +1,192 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>ApuraWeb — Verificador de Notícias</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Roboto:wght@400;500;600;700&family=STIX+Two+Text:wght@400;600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="popup.css">
+</head>
+
+<body>
+    <!-- ── Card principal ───────────────────────────────────────────────── -->
+    <div class="card">
+
+        <!-- Cabeçalho com identidade visual -->
+        <header class="header">
+            <div class="brand">
+                <span class="brand-name">Apura</span><span class="brand-accent">Web</span>
+            </div>
+            <span class="header-badge">Verificador IA</span>
+        </header>
+
+        <!-- Estado inicial: botão de análise -->
+        <div id="view-initial" class="view">
+            <p class="intro-text">Clique abaixo para verificar a confiabilidade do artigo nesta página usando inteligência artificial.</p>
+            <button id="analyze-btn" class="btn btn-primary" aria-label="Analisar conteúdo da página atual">
+                <span class="btn-icon">🔍</span>
+                Analisar esta página
+            </button>
+        </div>
+
+        <!-- Estado de carregamento -->
+        <div id="view-loading" class="view hidden" aria-live="polite" aria-label="Analisando">
+            <div class="loading-content">
+                <div class="spinner" role="status" aria-label="Carregando"></div>
+                <p class="loading-title">Analisando com IA…</p>
+                <p class="loading-sub">Isso pode levar até 30 segundos.</p>
+            </div>
+        </div>
+
+        <!-- Estado de erro -->
+        <div id="view-error" class="view hidden" role="alert">
+            <div class="error-box">
+                <div class="error-icon">⚠️</div>
+                <p class="error-title">Não foi possível analisar</p>
+                <p id="error-message" class="error-message">Erro desconhecido.</p>
+                <button id="retry-btn" class="btn btn-secondary btn-sm">Tentar novamente</button>
+            </div>
+        </div>
+
+        <!-- Estado de resultado -->
+        <div id="view-result" class="view hidden">
+
+            <!-- Badge de veredito -->
+            <div id="verdict-banner" class="verdict-banner">
+                <div id="verdict-icon" class="verdict-icon" aria-hidden="true"></div>
+                <div class="verdict-info">
+                    <div class="verdict-tag-row">
+                        <span id="verdict-label" class="verdict-label">Análise</span>
+                        <span id="discourse-pill" class="badge-pill hidden"></span>
+                        <span id="scope-pill" class="badge-pill badge-pill--scope hidden">Fora do Escopo</span>
+                    </div>
+                    <span id="verdict-score" class="verdict-score"></span>
+                </div>
+            </div>
+
+            <!-- Caixa de alerta de discrepância / sátira / incerteza -->
+            <div id="verdict-alert" class="verdict-alert hidden" role="alert">
+                <div id="alert-title" class="alert-title"></div>
+                <div id="alert-message" class="alert-message"></div>
+            </div>
+
+            <!-- Barra de risco -->
+            <div class="risk-bar-section" id="risk-bar-section">
+                <div class="risk-bar-track" role="progressbar" aria-label="Índice de risco" id="risk-bar-track">
+                    <div class="risk-bar-fill" id="risk-bar-fill"></div>
+                    <div class="risk-bar-marker" id="risk-bar-marker"></div>
+                </div>
+                <div class="risk-bar-labels">
+                    <span class="label-low">Seguro</span>
+                    <span class="label-mid">Atenção</span>
+                    <span class="label-high">Risco</span>
+                </div>
+            </div>
+
+            <!-- Resumo explicativo -->
+            <div class="summary-section">
+                <p id="verdict-summary" class="summary-text"></p>
+            </div>
+
+            <!-- Indicadores rápidos -->
+            <div class="quick-stats" id="quick-stats">
+                <div class="stat-item">
+                    <span class="stat-label">Modelo IA</span>
+                    <span id="stat-model-label" class="stat-value"></span>
+                </div>
+                <div class="stat-item">
+                    <span class="stat-label">Prob. Falsa</span>
+                    <span id="stat-fake-prob" class="stat-value"></span>
+                </div>
+                <div class="stat-item">
+                    <span class="stat-label">Confiança</span>
+                    <span id="stat-confidence" class="stat-value"></span>
+                </div>
+            </div>
+
+            <!-- Ações -->
+            <div class="result-actions">
+                <button id="open-modal-btn" class="btn btn-outline">
+                    Ver análise completa
+                </button>
+                <button id="new-analysis-btn" class="btn btn-ghost">
+                    Nova análise
+                </button>
+            </div>
+
+        </div>
+
+    </div><!-- /card -->
+
+    <!-- ── Modal de detalhes completos ──────────────────────────────────── -->
+    <div id="modal" class="modal hidden" role="dialog" aria-modal="true" aria-labelledby="modal-title">
+        <div class="modal-backdrop" id="modal-backdrop"></div>
+        <div class="modal-panel">
+
+            <div class="modal-header">
+                <h2 id="modal-title" class="modal-title">Análise Completa</h2>
+                <button id="close-modal" class="modal-close" aria-label="Fechar modal">✕</button>
+            </div>
+
+            <div class="modal-body" id="modal-body">
+
+                <!-- Seção: Veredito -->
+                <section class="modal-section">
+                    <h3 class="modal-section-title">Veredito</h3>
+                    <div id="modal-verdict" class="modal-verdict-row"></div>
+                </section>
+
+                <!-- Seção: Consenso e Comparação Semântica -->
+                <section class="modal-section hidden" id="modal-semantic-section">
+                    <h3 class="modal-section-title">Consenso Factual & Semântica</h3>
+                    <div id="modal-semantic-badge" class="consensus-badge"></div>
+                    <p id="modal-semantic-text" class="modal-text"></p>
+                </section>
+
+                <!-- Seção: Marcadores de Especulação (Hedging) -->
+                <section class="modal-section hidden" id="modal-hedging-section">
+                    <h3 class="modal-section-title">Marcadores de Especulação Detectados</h3>
+                    <div id="modal-hedging-chips" class="chips-container"></div>
+                </section>
+
+                <!-- Seção: Explicação -->
+                <section class="modal-section">
+                    <h3 class="modal-section-title">Por que esse resultado?</h3>
+                    <ul id="modal-explanation" class="modal-list"></ul>
+                </section>
+
+                <!-- Seção: Recomendações -->
+                <section class="modal-section">
+                    <h3 class="modal-section-title">O que fazer?</h3>
+                    <ul id="modal-recommendations" class="modal-list modal-list--tips"></ul>
+                </section>
+
+                <!-- Seção: Fontes / Evidências -->
+                <section class="modal-section" id="modal-evidence-section">
+                    <h3 class="modal-section-title">Fontes verificadas</h3>
+                    <div id="modal-evidence"></div>
+                </section>
+
+                <!-- Seção: Limitações -->
+                <section class="modal-section">
+                    <h3 class="modal-section-title">Limitações</h3>
+                    <ul id="modal-limitations" class="modal-list modal-list--warn"></ul>
+                </section>
+
+                <!-- Seção: Dados técnicos -->
+                <section class="modal-section">
+                    <h3 class="modal-section-title">Dados técnicos</h3>
+                    <div id="modal-technical" class="modal-technical"></div>
+                </section>
+
+            </div><!-- /modal-body -->
+        </div><!-- /modal-panel -->
+    </div><!-- /modal -->
+
+    <script src="popup.js"></script>
+</body>
+
+</html>
