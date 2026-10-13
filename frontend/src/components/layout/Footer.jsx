@@ -7,14 +7,8 @@ export default function Footer() {
   return (
     <footer className="site-footer">
       <div className="wrap site-footer__row">
-        <div className="site-footer__left">
-          <Brand />
-          <p>
-            Um segundo olhar faz diferença.
-            <br />
-            Projeto acadêmico · Residência em IA
-          </p>
-        </div>
+        <Brand />
+        <p className="site-footer__tagline">Um segundo olhar faz diferença. Projeto acadêmico · Residência em IA</p>
         <nav className="site-footer__links" aria-label="Navegação secundária">
           <Link to="/como-funciona">Como funciona</Link>
           <Link to="/privacidade">Privacidade</Link>

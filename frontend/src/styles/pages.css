@@ -73,7 +73,7 @@
 
 .hero-copy p {
   max-width: 26rem;
-  font-size: var(--text-lead);
+  font-size: var(--text-h4);
   color: var(--color-text-muted);
 }
 
@@ -459,7 +459,7 @@
 
 .verdict p {
   max-width: 30rem;
-  font-size: var(--text-ui);
+  font-size: var(--text-body);
   color: var(--color-text-muted);
 }
 
@@ -1106,14 +1106,29 @@
 }
 
 .logo-plaque {
-  width: 13.5rem;
-  padding: var(--space-3) var(--space-4);
-  border-radius: var(--radius-md);
+  display: inline-flex;
+  align-items: center;
+  width: min(100%, 21rem);
+  min-height: 8rem;
+  padding: var(--space-5) var(--space-6);
+  border-top: var(--space-1) solid var(--color-accent);
+  border-radius: var(--radius-lg);
   background: var(--color-bg);
+  box-shadow: var(--shadow-raised);
 }
 
 .logo-plaque .brand {
+  gap: var(--space-4);
   min-height: 0;
+  color: var(--color-text);
+}
+
+.logo-plaque .brand__mark {
+  width: 6rem;
+}
+
+.logo-plaque .brand__name {
+  font-size: var(--text-h1);
 }
 
 .auth-story h2 {
@@ -1124,7 +1139,7 @@
 }
 
 .auth-story p {
-  font-size: var(--text-ui);
+  font-size: var(--text-body);
 }
 
 .auth-benefits {
@@ -1158,7 +1173,7 @@
 }
 
 .auth-form__lead {
-  font-size: var(--text-small);
+  font-size: var(--text-body);
   color: var(--color-text-muted);
 }
 
@@ -1578,6 +1593,14 @@
     padding: var(--space-8);
   }
 
+  .logo-plaque .brand__mark {
+    width: 5rem;
+  }
+
+  .logo-plaque .brand__name {
+    font-size: var(--text-h2-large);
+  }
+
   .history-head,
   .history-row {
     grid-template-columns: minmax(0, 1fr) 10rem 6rem 7.5rem;
@@ -1666,14 +1689,31 @@
 
   .auth-story {
     display: grid;
-    grid-template-columns: minmax(0, 1fr) minmax(0, 1.5fr);
+    grid-template-columns: max-content minmax(0, 1fr);
     gap: var(--space-5);
     padding: var(--space-6);
   }
 
-  .auth-story .logo-plaque,
   .auth-story .auth-benefits {
     display: none;
+  }
+
+  .logo-plaque {
+    width: fit-content;
+    min-height: 0;
+    padding: var(--space-2) var(--space-3);
+  }
+
+  .logo-plaque .brand {
+    gap: var(--space-2);
+  }
+
+  .logo-plaque .brand__mark {
+    width: 3.5rem;
+  }
+
+  .logo-plaque .brand__name {
+    font-size: var(--text-brand);
   }
 
   .auth-story h2 {
@@ -1875,7 +1915,9 @@
   }
 
   .auth-story {
-    display: block;
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-6);
     padding: var(--space-6);
   }
 

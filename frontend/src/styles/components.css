@@ -289,7 +289,7 @@
 
 .field__label {
   font-size: var(--text-small);
-  font-weight: var(--weight-bold);
+  font-weight: var(--weight-medium);
   color: var(--color-text);
 }
 
@@ -573,6 +573,12 @@
   gap: var(--space-3);
   padding-inline: var(--space-4);
   pointer-events: none;
+}
+
+@media (max-width: 48.75em) {
+  .toast-region {
+    bottom: calc(var(--space-6) + var(--whatsapp-link-size) + var(--space-4) + env(safe-area-inset-bottom));
+  }
 }
 
 .toast-stack {
@@ -1100,7 +1106,7 @@
   min-height: var(--target-min);
   border-bottom: 3px solid transparent;
   color: var(--color-text-muted);
-  font-weight: var(--weight-bold);
+  font-weight: var(--weight-medium);
   text-decoration: none;
 }
 

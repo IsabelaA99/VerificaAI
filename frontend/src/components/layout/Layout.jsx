@@ -3,6 +3,7 @@ import { Outlet, useLocation } from 'react-router-dom'
 import DemoBanner from './DemoBanner.jsx'
 import Footer from './Footer.jsx'
 import Header from './Header.jsx'
+import WhatsAppLink from './WhatsAppLink.jsx'
 
 /**
  * Estrutura comum a todas as páginas.
@@ -70,6 +71,7 @@ export default function Layout() {
         <Outlet />
       </main>
       <Footer />
+      <WhatsAppLink />
     </>
   )
 }

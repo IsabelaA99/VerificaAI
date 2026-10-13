@@ -17,12 +17,14 @@ from dataclasses import dataclass
 from typing import Optional
 
 import requests
+import urllib3
 from bs4 import BeautifulSoup
 import trafilatura
 
 from .preprocessing import InputValidationError, normalize_text
 
 logger = logging.getLogger(__name__)
+MAX_REDIRECTS = 5
 
 # Cabeçalhos realistas de navegador desktop moderno para evitar bloqueios antirrobô
 BROWSER_HEADERS = {
@@ -54,12 +56,21 @@ class ScrapedArticle:
     published_at: Optional[str] = None
 
 
-def validate_url_safety(url: str) -> str:
+def _public_destination(url: str) -> tuple[str, str, int]:
     """
-    Valida segurança contra SSRF (RNF09).
-    Retorna o hostname validado ou levanta InputValidationError.
+    Valida todos os endereços DNS e devolve um IP público para a conexão.
+    O cliente HTTP deve usar esse IP, sem fazer uma segunda resolução DNS.
     """
-    parsed = urllib.parse.urlparse(url)
+    try:
+        parsed = urllib.parse.urlsplit(url)
+        hostname = parsed.hostname
+        port = parsed.port if parsed.port is not None else (443 if parsed.scheme == "https" else 80)
+    except ValueError as exc:
+        raise InputValidationError(
+            "invalid_url", "O endereço informado não é válido.",
+            "Verifique o formato da URL e tente novamente.", field="url",
+        ) from exc
+
     if parsed.scheme not in ("http", "https"):
         raise InputValidationError(
             "invalid_url_scheme",
@@ -68,8 +79,7 @@ def validate_url_safety(url: str) -> str:
             field="url",
         )
 
-    hostname = parsed.hostname
-    if not hostname:
+    if not hostname or not port or parsed.username is not None or parsed.password is not None:
         raise InputValidationError(
             "invalid_url",
             "O endereço informado não contém um nome de domínio válido.",
@@ -86,19 +96,14 @@ def validate_url_safety(url: str) -> str:
             field="url",
         )
 
-    # Resolução DNS e verificação de IP privado/link-local/loopback
+    # Verifica todas as respostas A/AAAA; nunca usa uma resposta não validada.
     try:
-        resolved = socket.getaddrinfo(hostname, None)
+        resolved = socket.getaddrinfo(hostname, port, type=socket.SOCK_STREAM)
+        if not resolved:
+            raise socket.gaierror("sem endereços DNS")
         for _, _, _, _, sockaddr in resolved:
             ip = ipaddress.ip_address(sockaddr[0])
-            if (
-                ip.is_private
-                or ip.is_loopback
-                or ip.is_link_local
-                or ip.is_reserved
-                or ip.is_multicast
-                or str(ip).startswith("169.254.")
-            ):
+            if not ip.is_global:
                 raise InputValidationError(
                     "forbidden_url",
                     "O endereço aponta para um servidor interno ou restrito.",
@@ -113,31 +118,80 @@ def validate_url_safety(url: str) -> str:
             field="url",
         ) from exc
 
+    return hostname, resolved[0][4][0], port
+
+
+def validate_url_safety(url: str) -> str:
+    """Valida uma URL contra SSRF e retorna seu hostname público."""
+    hostname, _, _ = _public_destination(url)
     return hostname
+
+
+def _get_public_url(url: str, timeout: int) -> requests.Response:
+    """Busca cada salto por IP validado, mantendo Host, SNI e validação TLS."""
+    current_url = url
+    for redirect_count in range(MAX_REDIRECTS + 1):
+        prepared = requests.Request("GET", current_url, headers=BROWSER_HEADERS).prepare()
+        current_url = prepared.url
+        hostname, ip, port = _public_destination(current_url)
+        headers = dict(prepared.headers)
+        default_port = 443 if current_url.startswith("https://") else 80
+        host_header = f"[{hostname}]" if ":" in hostname else hostname
+        headers["Host"] = host_header if port == default_port else f"{host_header}:{port}"
+
+        pool_type = (
+            urllib3.HTTPSConnectionPool if current_url.startswith("https://")
+            else urllib3.HTTPConnectionPool
+        )
+        pool_kwargs = {}
+        if pool_type is urllib3.HTTPSConnectionPool:
+            pool_kwargs = {
+                "server_hostname": hostname,
+                "assert_hostname": hostname,
+                "cert_reqs": "CERT_REQUIRED",
+                "ca_certs": requests.certs.where(),
+            }
+        with pool_type(ip, port, **pool_kwargs) as pool:
+            raw = pool.urlopen(
+                "GET", prepared.path_url, headers=headers, timeout=timeout,
+                retries=False, redirect=False, decode_content=True,
+            )
+            response = requests.Response()
+            response.status_code = raw.status
+            response.headers = requests.structures.CaseInsensitiveDict(raw.headers)
+            response._content = raw.data
+            response.url = current_url
+            response.encoding = requests.utils.get_encoding_from_headers(response.headers)
+
+        location = response.headers.get("Location")
+        if response.status_code in (301, 302, 303, 307, 308) and location:
+            if redirect_count == MAX_REDIRECTS:
+                raise InputValidationError(
+                    "too_many_redirects", "O endereço redirecionou muitas vezes.",
+                    "Insira o link direto da matéria jornalística.", field="url",
+                )
+            current_url = urllib.parse.urljoin(current_url, location)
+            continue
+        return response
+
+    raise AssertionError("limite de redirecionamentos não aplicado")
 
 
 def scrape_url(url: str, timeout: int = 12) -> ScrapedArticle:
     """
     Raspa uma notícia a partir da URL, contornando popups de cookies/anúncios.
     """
-    domain = validate_url_safety(url)
-
     # 1. Download do HTML com proteção e cabeçalhos de navegador
     try:
-        response = requests.get(
-            url,
-            headers=BROWSER_HEADERS,
-            timeout=timeout,
-            allow_redirects=True,
-        )
-    except requests.exceptions.Timeout as exc:
+        response = _get_public_url(url, timeout)
+    except (requests.exceptions.Timeout, urllib3.exceptions.TimeoutError) as exc:
         raise InputValidationError(
             "url_timeout",
             "O site de notícias demorou muito para responder.",
             "Tente novamente ou cole o texto da notícia diretamente no formulário.",
             field="url",
         ) from exc
-    except requests.exceptions.RequestException as exc:
+    except (requests.exceptions.RequestException, urllib3.exceptions.HTTPError) as exc:
         raise InputValidationError(
             "network_error",
             "Não foi possível conectar ao site da notícia.",
@@ -145,9 +199,7 @@ def scrape_url(url: str, timeout: int = 12) -> ScrapedArticle:
             field="url",
         ) from exc
 
-    # Valida após redirecionamentos se ainda é seguro
-    if response.url and response.url != url:
-        validate_url_safety(response.url)
+    domain = urllib.parse.urlsplit(response.url).hostname or ""
 
     if response.status_code == 403 or response.status_code == 401:
         raise InputValidationError(

@@ -53,13 +53,13 @@ regras de risco, abstenção e rastreabilidade de versões.
 ## Etapa 2 — Entrada por URL e segurança
 - [x] Extração estruturada: título, subtítulo, corpo, autoria, data, domínio com Trafilatura e BeautifulSoup (RF02)
 - [x] Tratamento de falhas: rede, HTTP, paywall, antirrobô, popups de consentimento, não textual (RF03)
-- [x] Proteção SSRF: bloqueio de IPs privados/loopback/link-local/metadados, validação de redirecionamento (RNF09)
-- [x] Testes automatizados de segurança SSRF e extração com mocks
+- [x] Proteção SSRF: validação de todos os IPs resolvidos e de cada redirecionamento antes da conexão; conexão vinculada ao IP público validado (RNF09)
+- [x] Testes de segurança SSRF e extração com mocks, incluindo redirecionamento a destino interno e mudança de DNS
 
 ## Etapa 3 — Alegação, evidências e síntese LLM
 - [x] Identificação e resumo da alegação principal (RF06, RF20)
-- [x] Consulta a evidências via Google Fact Check Tools API + fallback de checagens brasileiras (RF07)
-- [x] Classificação fonte × alegação: compatível/conflitante/contextual/insuficiente (RF08)
+- [x] Consulta a evidências via Google Fact Check Tools API + fallback de busca pública (RF07)
+- [/] Classificação fonte × alegação: hoje usa palavras do veredito ou título/resumo, sem confirmar a correspondência com a alegação; implementar validação mais robusta (RF08)
 - [x] Síntese explicativa contextual via LLM (Gemini / OpenAI / Síntese Neural) explicando "por isso e por isso"
 - [x] Ativação do sinal `evidence_conflict` no cálculo do índice de risco ponderado
 
@@ -77,7 +77,7 @@ regras de risco, abstenção e rastreabilidade de versões.
 - [x] Estados reais de processamento, sem progresso fictício (RF25, RNF17)
 - [x] Resultado, fontes, orientação e resumo copiável (RF16–RF18, RF26)
 - [x] WCAG 2.2 AA, responsivo 320–1.440 px, matriz de navegadores (RNF08, RNF14, RNF15)
-- [x] 808 testes automatizados com Vitest cobrindo fluxos, jornada e a11y axe
+- [x] Testes automatizados com Vitest cobrindo fluxos, jornada e a11y axe
 
 ## Etapa 6 — Qualidade da IA e governança
 - [ ] Calibração (temperature scaling) em dados independentes (RNF04)

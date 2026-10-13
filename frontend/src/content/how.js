@@ -52,14 +52,14 @@ export function howSteps({ backend }) {
         'Esses sinais ajudam a olhar com mais cuidado, mas nenhum deles prova sozinho que algo é falso.',
     },
     {
-      title: 'As evidências são comparadas',
+      title: 'As fontes são consultadas',
       text: backend.sources
-        ? 'O sistema procura fontes relacionadas à alegação e mostra se cada uma é compatível, conflitante, contextual ou insuficiente. Essa leitura aparece separada da estimativa do modelo.'
+        ? 'O sistema busca checagens relacionadas à alegação e classifica os resultados como compatíveis, conflitantes ou contextuais com base no veredito ou no título encontrado. Essa classificação automática pode errar; confira a fonte antes de usá-la como evidência.'
         : 'A consulta a fontes externas ainda não está habilitada nesta versão. Quando estiver, cada fonte aparecerá separada da estimativa do modelo, dizendo se é compatível, conflitante, contextual ou insuficiente.',
     },
     {
       title: 'Você recebe uma explicação',
-      text: 'O resultado mostra a categoria, o índice de risco, os fatores principais, as fontes (quando houver), as limitações e o que fazer em seguida. Quando faltam informações, o Apura admite a incerteza e marca a análise como inconclusiva.',
+      text: 'O resultado mostra a categoria, o índice de risco, os fatores principais, as fontes (quando houver), as limitações e o que fazer em seguida. Se a confiança do modelo for baixa ou os trechos divergirem muito, a análise fica inconclusiva.',
     },
   ]
 }
@@ -94,13 +94,12 @@ export function howSections({ backend }) {
       id: 'inconclusiva',
       title: 'Quando a análise fica inconclusiva',
       blocks: [
-        p('O Apura prefere dizer que não sabe a dar uma resposta sem base. Isso acontece quando:'),
+        p('O Apura marca a análise como inconclusiva quando:'),
         ul([
-          'o conteúdo está fora do tipo de notícia que o sistema consegue avaliar;',
-          'o modelo não tem segurança suficiente para indicar um nível de risco;',
-          'as fontes encontradas se contradizem;',
-          'faltam evidências relevantes sobre a alegação.',
+          'a confiança calculada pelo modelo fica abaixo do limite definido nas regras;',
+          'os trechos analisados apresentam previsões muito diferentes entre si.',
         ]),
+        p('A ausência de fontes externas, por si só, não torna a análise inconclusiva nesta versão.'),
         p('Cada resultado inconclusivo mostra o motivo, com uma mensagem própria.'),
       ],
     },
@@ -109,9 +108,9 @@ export function howSections({ backend }) {
       title: 'Como as fontes são usadas',
       blocks: backend.sources
         ? [
-            p('O Apura consulta uma coleção curada e, quando habilitado, um serviço de busca para achar fontes relacionadas à alegação.'),
-            p('Cada fonte aparece num cartão com o veículo ou a instituição, a data, o trecho usado, o link e o motivo de ela estar ali, classificada como compatível, conflitante, contextual ou insuficiente. Fonte sem relação demonstrável com a alegação não altera o resultado.'),
-            p('Se nenhuma fonte relevante for encontrada, o resultado diz que as evidências são insuficientes. O Apura não inventa referências.'),
+            p('O Apura pesquisa checagens em um serviço especializado quando configurado. Se ele não trouxer resultados, tenta uma busca pública na internet.'),
+            p('A relação compatível, conflitante ou contextual é atribuída automaticamente pelo veredito da checagem ou por palavras do título e do resumo. A correspondência com a alegação ainda não é verificada em profundidade; uma fonte sem relação direta pode aparecer e influenciar o índice. Confira o link original.'),
+            p('Se a busca não retornar fontes, o resultado mostra essa ausência. Isso não prova nem refuta a alegação.'),
           ]
         : [
             p('Nesta versão, o Apura ainda não consulta fontes externas. Nenhuma evidência externa é verificada: o resultado vem só do texto enviado.'),
@@ -153,7 +152,7 @@ export function howFaq({ accountsMode }) {
     },
     {
       question: 'Por que o resultado pode ser inconclusivo?',
-      answer: 'Porque às vezes não há base para uma conclusão responsável: o conteúdo está fora do que o sistema avalia, o modelo não tem segurança, as fontes se contradizem ou faltam evidências. Nesses casos o Apura explica o que faltou.',
+      answer: 'Porque a confiança calculada pelo modelo pode ficar abaixo do limite das regras ou os trechos do texto podem produzir previsões muito diferentes. O resultado mostra o motivo. A falta de fontes externas, sozinha, não gera esse status nesta versão.',
     },
     {
       question: 'Preciso criar uma conta?',
@@ -165,7 +164,7 @@ export function howFaq({ accountsMode }) {
     },
     {
       question: 'O Apura guarda o texto que eu enviei?',
-      answer: 'Não. O texto é usado só durante a análise. O que fica registrado é um resumo curto da alegação, o resultado e as versões do sistema. A página de Privacidade explica o que é guardado e onde.',
+      answer: 'Não como texto integral em um campo da análise. O servidor guarda um resumo curto da alegação, o resultado, dados técnicos e versões; explicações e fontes podem repetir trechos do conteúdo. A página de Privacidade explica o que é guardado e onde.',
     },
   ]
 }

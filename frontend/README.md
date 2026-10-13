@@ -59,11 +59,11 @@ falha se aparecer algo com cara de segredo).
 |----------|--------|-----------|
 | `VITE_API_BASE_URL` | `/api` | Endereço base da API. Padrão: mesma origem. Se a API ficar em outra origem, o back end precisa liberar o cabeçalho `X-Visitor-Id` no CORS e a origem entra em `connect-src` (`deploy/security-headers.conf`). |
 | `VITE_REQUEST_TIMEOUT_MS` | `30000` | Prazo máximo de espera de uma análise (RNF01: 30 s). |
-| `VITE_FEATURE_URL_INPUT` | `true` | `true`: a aba "Inserir link" funciona (enquanto o back end responde 501, a tela explica e leva ao texto). `false`: a aba aparece como "Em breve". |
+| `VITE_FEATURE_URL_INPUT` | `true` | `true`: a aba "Inserir link" envia a URL à API. `false`: a aba aparece como "Em breve". |
 | `VITE_ACCOUNTS_MODE` | `demo` | `demo`: cadastro, login, recuperação e exclusão de conta em **demonstração**, com aviso visível. `off`: recursos de conta ocultos. |
 | `VITE_FEEDBACK_MODE` | `demo` | `demo`: avaliação da análise em demonstração. `off`: oculta. |
-| `VITE_BACKEND_URL_ANALYSIS` | `false` | Só muda os textos de "Como funciona" e "Privacidade". Passe a `true` quando o back end passar a analisar links. |
-| `VITE_BACKEND_SOURCES` | `false` | Idem, para a consulta a fontes externas. |
+| `VITE_BACKEND_URL_ANALYSIS` | `true` | Só muda os textos de "Como funciona" e "Privacidade". Use `false` com uma API anterior sem análise de links. |
+| `VITE_BACKEND_SOURCES` | `true` | Só muda os mesmos textos. Use `false` com uma API anterior sem consulta a fontes. |
 | `DEV_API_PROXY_TARGET` | `http://localhost:8000` | Destino do proxy de `npm run dev` e `npm run preview`. Não vai para o pacote. |
 
 ## Scripts
@@ -118,7 +118,7 @@ npx vitest run src/pages/ResultPage   # uma tela
 npm run test:watch                    # modo contínuo
 ```
 
-São 808 testes em 31 arquivos. Eles não dependem do back end: a API é simulada.
+Os testes não dependem do back end: a API é simulada.
 
 O que **não** está nos testes automáticos (veja `DESIGN.md`, seções 7 e 10):
 
@@ -200,13 +200,17 @@ Note que o volume `./nginx:/etc/nginx/conf.d` **sai**: a configuração agora ve
 
 Resumo; o detalhe, com os requisitos de cada item, está em `DESIGN.md`.
 
-- **Depende do back end:** análise por link e extração da página (Etapa 2), consulta a fontes
-  (Etapa 3), contas, histórico sincronizado, feedback e contador de visitante no servidor
-  (Etapa 4), etapas reais de processamento (RF25), confirmação da alegação (RF06).
+- **Já existe no back end:** análise por link e extração da página (Etapa 2), consulta a fontes
+  e síntese explicativa (Etapa 3). A correspondência entre alegação e fonte ainda é heurística;
+  confira cada referência antes de usá-la como evidência.
+- **Depende do back end:** contas, histórico sincronizado, feedback e contador de visitante no
+  servidor (Etapa 4), etapas reais de processamento (RF25), confirmação da alegação (RF06).
 - **Demonstração (com aviso visível na tela):** cadastro, login, recuperação de acesso, exclusão de
   conta e envio de feedback.
-- **Códigos de erro propostos** (ainda inexistentes no back end): `invalid_url`, `page_unreachable`,
-  `page_blocked`, `page_paywalled`, `page_not_text` e `evidence_unavailable`. Confirmar os nomes.
+- **Códigos de erro:** a API de URL usa, entre outros, `invalid_url`, `forbidden_url`,
+  `dns_resolution_failed`, `url_timeout`, `network_error`, `paywall_or_forbidden`, `http_error`,
+  `non_text_content` e `empty_scraped_text`. Alguns códigos previstos pela interface ainda não
+  correspondem a esses nomes; alinhar o tratamento é uma pendência separada.
 - **Não implementado:** RF15 (explicação por trechos) e RF35 (contestação), ambos de prioridade
   "Evolução".
 - **Não verificado:** Figma do projeto (o acesso foi recusado), navegadores além do Chromium, leitor

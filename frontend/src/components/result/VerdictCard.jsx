@@ -64,7 +64,6 @@ export default function VerdictCard({ analysis }) {
         const isSatire = model.discourseType === 'satira' || model.trainingScope === 'out_of_domain_satire'
         const isConspiracy = model.discourseType === 'teoria_conspiratoria' || model.discourseType === 'conspiracy_or_theoretical'
         const isTraditionalPress = (model.trainingScope === 'in_domain_press' || model.discourseType === 'factual') && !isSatire && !isConspiracy
-        const divergesFromConsensus = sem.consensus_status === 'diverge_consenso' && !isTraditionalPress
         const isDiscrepant = (isOutOfDomain || isConspiracy || isSatire) && truePct >= 50 && !isTraditionalPress
 
         return (

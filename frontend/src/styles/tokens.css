@@ -45,6 +45,7 @@
   --slate-600: #566574;
 
   --green-700: #17644c;
+  --green-800: #11513d;
   --green-100: #e9f3ee;
   --green-200: #cfe8dc;
 
@@ -75,10 +76,10 @@
   --font-sans: 'Roboto', system-ui, -apple-system, 'Segoe UI', Arial, sans-serif;
   --font-serif: 'STIX Two Text', Georgia, 'Times New Roman', serif;
 
-  /* Escala modular (razão 1,25 sobre o corpo de 17 px; Bringhurst). Em rem, para respeitar o
-     tamanho de fonte escolhido pela pessoa no navegador (WCAG 1.4.4). */
+  /* Escala em rem: acompanha o tamanho de fonte escolhido no navegador (WCAG 1.4.4).
+     Textos de apoio têm 15 px para manter a leitura confortável. */
   --text-label: 0.75rem; /* 12 px — só rótulos em caixa alta e negrito */
-  --text-small: 0.875rem; /* 14 px — texto secundário (nunca abaixo disso em frases) */
+  --text-small: 0.9375rem; /* 15 px — texto secundário */
   --text-ui: 1rem; /* 16 px — botões, navegação, controles */
   --text-body: 1.0625rem; /* 17 px */
   --text-lead: 1.125rem; /* 18 px */
@@ -93,16 +94,17 @@
   --text-brand: 1.875rem; /* 30 px */
   --text-brand-footer: 1.5rem; /* 24 px */
 
-  --leading-display: 1.04;
-  --leading-heading: 1.12;
+  --leading-display: 1.1;
+  --leading-heading: 1.2;
   --leading-snug: 1.4;
-  --leading-body: 1.55;
+  --leading-body: 1.6;
 
-  --tracking-display: -0.028em;
-  --tracking-heading: -0.015em;
+  --tracking-display: -0.02em;
+  --tracking-heading: -0.01em;
   --tracking-label: 0.14em;
 
   --weight-regular: 400;
+  --weight-medium: 500;
   --weight-bold: 700;
 
   /* Medida de leitura confortável: 45 a 75 caracteres por linha (Bringhurst). */
@@ -139,6 +141,7 @@
   --ease-out: cubic-bezier(0.22, 1, 0.36, 1);
 
   --z-header: 10;
+  --z-floating: 20;
   --z-dialog: 100;
   --z-toast: 150;
 
@@ -180,6 +183,9 @@
   --color-danger: var(--red-700);
   --color-danger-hover: var(--red-800);
   --color-on-danger: var(--white);
+  --color-whatsapp: var(--green-700);
+  --color-whatsapp-hover: var(--green-800);
+  --color-on-whatsapp: var(--white);
 
   /* Anel de foco em duas camadas: a de dentro (dourada) se vê sobre fundos escuros e a de
      fora (azul-marinho) sobre fundos claros; juntas passam de 3:1 sobre qualquer fundo do
@@ -228,6 +234,7 @@
      ------------------------------------------------------------------------ */
   /* RNF08: controles principais com área mínima de 48 × 48 px CSS. */
   --target-min: 3rem;
+  --whatsapp-link-size: 3.5rem;
   --icon-size: 1.25rem;
 
   --wrap-max: 77rem;

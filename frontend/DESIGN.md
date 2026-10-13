@@ -21,7 +21,7 @@ Quando duas fontes discordam, vale a de cima.
 | # | Fonte | O que define |
 |---|-------|--------------|
 | 1 | **Requisitos v2.2** (`Requisitos_Fake_Eyes_Revisados_v2_2.docx`) | O que a interface deve fazer. É a fonte da verdade. |
-| 2 | **API v1 real** (repositório `verificAI`, commit `63a0382`) | O que o back end faz hoje: endpoints, formato de resposta, códigos de erro. Onde a API não cobre um requisito, a interface não inventa; marca como dependência (seção 6). |
+| 2 | **API v1 real** (neste repositório, `apura/analysis/`) | O que o back end faz hoje: endpoints, formato de resposta, códigos de erro. Onde a API não cobre um requisito, a interface não inventa; marca como dependência (seção 6). |
 | 3 | **Arquitetura** (seção 10 do documento de arquitetura v6, ADR-006) | React + Vite, interface estática servida pelo nginx na mesma origem da API. |
 | 4 | **Protótipo v2** (`fake-eyes-prototipo-v2.html`) | Identidade visual (azul-marinho e dourado, Roboto + STIX Two Text) e estrutura das telas. |
 | 5 | **Convenções de design** de autores reconhecidos (seção 2) | Decisões de detalhe que as fontes acima não cobrem. |
@@ -33,7 +33,7 @@ texto (3,8:1 → 5,1:1), o contorno dos campos (1,5:1 → 3,6:1) e o texto de ap
 
 Também do protótipo, **não** foi mantido: o medidor circular de risco (substituído por uma escala
 linear, seção 2) e a promessa "Referências rastreáveis" na tela inicial (trocada por "A decisão é
-sua": o back end ainda não consulta fontes, e o RF30 proíbe texto que não corresponda ao que o
+sua", antes da implementação da busca de fontes; o RF30 exige que o texto acompanhe o que o
 sistema faz).
 
 ---
@@ -112,12 +112,13 @@ inconclusiva"), além da cor.
 
 - Famílias: **Roboto** (interface e corpo) e **STIX Two Text** (títulos e marca), instaladas pelo
   `@fontsource` e **empacotadas** no site (sem chamada a serviço externo: privacidade e CSP).
-  São as mesmas famílias que o protótipo embutia.
-- Escala (razão 1,25 sobre o corpo de 17 px): 12 · 14 · 16 · 17 · 18 · 21 · 26 · 33 · 41 px, mais
+  São as mesmas famílias que o protótipo embutia. O peso 500 destaca títulos e controles sem
+  deixar a interface tão pesada quanto o peso 700.
+- Escala: 12 · 15 · 16 · 17 · 18 · 21 · 26 · 33 · 41 px, mais
   dois tamanhos fluidos (`--text-h1`: 38 → 52 px; `--text-display`: 46 → 70 px).
 - Tudo em `rem`: respeita o tamanho de fonte escolhido no navegador (WCAG 1.4.4). Nenhuma frase
-  fica abaixo de 14 px; os 12 px são só para rótulos em caixa alta e negrito (um teste confere).
-- Corpo de 17 px no computador e 16 px abaixo de 520 px. Entrelinha do corpo 1,55.
+  fica abaixo de 15 px; os 12 px são só para rótulos em caixa alta e negrito (um teste confere).
+- Corpo de 17 px no computador e 16 px abaixo de 520 px. Entrelinha do corpo 1,6.
 - Quebra de palavra: `overflow-wrap: break-word` no `body`. Não se usa `hyphens: auto` no corpo
   (a hifenização automática em português ainda erra), nem `overflow-wrap: anywhere` (que encolhe
   o tamanho mínimo de itens flex e quebrava palavras curtas).
@@ -221,7 +222,7 @@ alimenta.
 
 ## 5. Contrato com o back end
 
-API v1 (`verificAI`, commit `63a0382`):
+API v1 (`apura/analysis/api/`):
 
 | Chamada | Uso na interface |
 |---------|------------------|
@@ -234,11 +235,12 @@ decide pelo **`code`** (estável), não pela mensagem. Se a resposta não bater 
 esta versão conhece, a leitura falha com o cenário `incompatible_api` em vez de exibir um
 resultado errado (RF29: compatibilidade entre versões; versão aceita: `v1`).
 
-**Códigos que a interface espera e que ainda não existem no back end** (PROPOSTA, em
-`PROPOSED_CODE_TO_SCENARIO`, `src/domain/errors.js`): `invalid_url`, `page_unreachable`,
-`page_blocked`, `page_paywalled`, `page_not_text` e `evidence_unavailable`. A tela já funciona
-quando a API devolver qualquer um deles; os nomes devem ser confirmados com quem constrói o back
-end.
+O back end já emite `invalid_url` e códigos de URL como `forbidden_url`,
+`dns_resolution_failed`, `url_timeout`, `network_error`, `paywall_or_forbidden`, `http_error`,
+`non_text_content` e `empty_scraped_text`. A interface ainda propõe nomes diferentes para parte
+desses cenários (`page_unreachable`, `page_blocked`, `page_paywalled`, `page_not_text`) em
+`src/domain/errors.js`. `evidence_unavailable` não é emitido: a busca sem resposta é tratada como
+lista vazia. Esse contrato de erro precisa de alinhamento próprio.
 
 ---
 
@@ -255,20 +257,20 @@ Situações:
 - **Não implementado**.
 - **Fora da interface**: pertence ao back end, ao modelo ou à operação.
 
-Os testes citados rodam com `npm test` (808 testes em 31 arquivos).
+Os testes citados rodam com `npm test`.
 
 ### 6.1 Requisitos funcionais
 
 | Req. | Prior. | Situação | Onde | Teste / evidência | Observações |
 |------|--------|----------|------|-------------------|-------------|
-| RF01 Entrada por texto ou URL | MVP | **Atende** (texto). URL: **pronto na interface; depende do back end** (Etapa 2) | `domain/validation.js`, `domain/text.js`, `AnalysisForm.jsx` | `validation.test.js`, `text.test.js`, `AnalysisForm.test.jsx` | 50 a 5.000 caracteres depois de normalizar; sem `maxlength`, então nada é cortado em silêncio; o contador mostra o excesso. URL: só `http`/`https`, até 2.048 caracteres. Hoje a API responde 501 para URL e a tela explica e leva ao texto. |
-| RF02 Extração estruturada | MVP | **Depende do back end** (Etapa 2) | — | — | A API v1 não devolve título, autoria, data nem domínio. A interface não exibe esses campos e não inventa valores. Falta definir o formato da resposta. |
-| RF03 Falhas de URL | MVP | **Pronto na interface; depende do back end** | `domain/errors.js` (`page_unreachable`), `ErrorPanel.jsx` | `errors.test.js`, `ErrorPanel.test.jsx` | Mostra o motivo conhecido, não apresenta classificação só pela URL e oferece "Colar o texto da notícia". Códigos propostos (seção 5). |
+| RF01 Entrada por texto ou URL | MVP | **Atende** (integração disponível) | `domain/validation.js`, `domain/text.js`, `AnalysisForm.jsx` | `validation.test.js`, `text.test.js`, `AnalysisForm.test.jsx` | 50 a 20.000 caracteres depois de normalizar; sem `maxlength`, então nada é cortado em silêncio. URL: só `http`/`https`, até 2.048 caracteres. A API v1 aceita texto e URL. |
+| RF02 Extração estruturada | MVP | **Parcial** | `analysis/services/scraper.py` | Testes do back end com mocks | O back end extrai título, subtítulo, corpo, autoria, data e domínio, mas a resposta da API não expõe esses metadados separadamente; a interface não os mostra. |
+| RF03 Falhas de URL | MVP | **Parcial** | `domain/errors.js`, `ErrorPanel.jsx` | `errors.test.js`, `ErrorPanel.test.jsx` | A API rejeita URL e falhas de extração com códigos próprios. Parte desses códigos ainda não está mapeada para o cenário específico da interface; ver seção 5. |
 | RF04 Normalização e idioma | MVP | **Parcial** | `domain/text.js`, `domain/errors.js` | `text.test.js`, `errors.test.js` | A interface normaliza para contar e validar o tamanho. A detecção de idioma e de texto ilegível é do back end; a interface mostra a mensagem específica (`unsupported_language`, `text_unreadable`, `text_insufficient`) e não segue para o resultado. |
-| RF05 Privacidade no processamento | MVP | **Atende** (lado da interface) | `services/resultCache.js`, `services/historyStore.js` | `stores.test.js`, `privacy.test.js`, `hygiene.test.js` | O texto integral nunca vai para o armazenamento do navegador: o cache de resultados fica só na memória; o histórico guarda a alegação resumida. O rascunho do formulário fica só na memória. O tratamento no servidor (não guardar o texto, mascarar CPF, e-mail e telefone) é do back end. |
+| RF05 Privacidade no processamento | MVP | **Parcial** | `services/resultCache.js`, `services/historyStore.js`, `content/privacy.js` | `stores.test.js`, `privacy.test.js`, `hygiene.test.js` | O rascunho fica só na memória e o histórico local guarda a alegação resumida. O servidor mascara CPF, e-mail e telefone nesse resumo, mas explicações e fontes persistidas podem repetir trechos do conteúdo; a página de privacidade informa essa limitação. |
 | RF06 Alegação principal | MVP | **Parcial** | `VerdictCard.jsx` | `ResultPage.test.jsx` | A alegação aparece junto do resultado. **Confirmar, corrigir ou escolher outra alegação não foi implementado**: a API não tem esse contrato. A tela diz: "Ainda não é possível confirmar ou corrigir a alegação nesta versão." |
-| RF07 Fontes relacionadas | MVP | **Pronto na interface; depende do back end** (Etapa 3) | `SourcesSection.jsx` | `ResultPage.test.jsx` | Quatro estados: consulta desligada, nenhuma fonte ("evidências insuficientes"), falha na consulta e fontes encontradas. |
-| RF08 Relação fonte × alegação | MVP | **Pronto na interface; depende do back end** | `SourcesSection.jsx`, `domain/analysis.js` | `ResultPage.test.jsx`, `analysis.test.js` | Cartão com relação (compatível, conflitante, contextual, insuficiente), trecho, veículo, data e link; campo ausente aparece como "não informado". Seção separada da previsão do modelo. Só links `http(s)`. |
+| RF07 Fontes relacionadas | MVP | **Parcial** | `SourcesSection.jsx`, `analysis/services/factcheck.py` | `ResultPage.test.jsx`; testes do back end com mocks | A API consulta a Google Fact Check Tools quando configurada e recorre a uma busca pública. A tela distingue ausência e fontes encontradas; o back end ainda não informa falha da consulta separadamente da ausência de resultados. |
+| RF08 Relação fonte × alegação | MVP | **Parcial** | `SourcesSection.jsx`, `domain/analysis.js`, `analysis/services/factcheck.py` | `ResultPage.test.jsx`, `analysis.test.js` | A interface aceita relações compatível, conflitante, contextual e insuficiente. O back end gera as três primeiras por palavras do veredito ou do título/resumo, sem verificar em profundidade a correspondência com a alegação. Isso pode afetar o índice. |
 | RF09 Contexto temporal e entidades | MVP | **Depende do back end** | — | — | A API v1 não devolve entidades nem indicador temporal; a interface não exibe nada do tipo (o RF09 manda mostrar o indicador só quando há relação explícita). |
 | RF10 Indicadores linguísticos | MVP | **Atende** | `IndicatorsSection.jsx` | `ResultPage.test.jsx` | Rotulados como indicadores auxiliares, nunca como prova; seção separada das fontes. |
 | RF11 Classificação textual | MVP | **Atende** (exibição) | `TechnicalDetails.jsx` | `ResultPage.test.jsx` | Mostra o identificador e a integridade (SHA-256) do modelo, a classe e a confiança, na área técnica. |
@@ -287,10 +289,10 @@ Os testes citados rodam com `npm test` (808 testes em 31 arquivos).
 | RF24 Formulário de análise | MVP | **Atende** | `AnalysisForm.jsx`, `Tabs.jsx` | `AnalysisForm.test.jsx` | Abas "Colar texto" e "Inserir link" (padrão APG), instruções, contador, validação ligada ao campo; só a opção selecionada vai na solicitação. |
 | RF25 Estados de processamento | MVP | **Parcial** | `ProcessingPanel.jsx`, `state/analysisRun.jsx` | `ProcessingPanel.test.jsx`, `analysisRun.test.jsx` | Confirma o recebimento, mostra validação concluída e análise em andamento, o tempo decorrido contra o prazo de 30 s e permite cancelar; ignora envio duplicado. **"Extração da página" e "consulta a fontes" não aparecem** porque a API v1 é síncrona e não informa etapas; mostrá-las seria progresso fictício. Precisa de um endpoint de acompanhamento. |
 | RF26 Apresentação do resultado | MVP | **Atende** | `ResultPage.jsx` | `ResultPage.test.jsx` | Resultado principal antes dos detalhes técnicos; "Nova verificação" visível no alto da página; cada fonte tem o botão "Abrir a fonte" (nova aba, com `rel="noopener noreferrer"`). |
-| RF27 Tratamento de erros | MVP | **Atende** na interface (cenários 1, 2 e 6 dependem do back end para acontecer) | `domain/errors.js`, `ErrorPanel.jsx` | `errors.test.js`, `ErrorPanel.test.jsx` | Os sete cenários têm tela, ação e teste: URL inválida, página inacessível, texto insuficiente, idioma não suportado, API indisponível, falha na consulta de evidências e tempo limite. Outros estados da API também têm tratamento (texto longo, ilegível, link indisponível, limite de requisições, análise não encontrada, API incompatível). |
+| RF27 Tratamento de erros | MVP | **Parcial** | `domain/errors.js`, `ErrorPanel.jsx` | `errors.test.js`, `ErrorPanel.test.jsx` | Há telas para URL inválida, página inacessível, texto insuficiente, idioma não suportado, API indisponível, falha da consulta de evidências e tempo limite. Parte dos códigos reais de URL não está mapeada e o back end não distingue falha de evidências de ausência de resultados. |
 | RF28 Interface do histórico | MVP | **Atende** (local). Conta em outro aparelho: **demonstração** | `HistoryPage.jsx`, `MigrateHistoryDialog.jsx` | `HistoryPage.test.jsx`, `AuthPage.test.jsx` | Os itens locais permanecem depois de fechar o navegador. O histórico local só é vinculado à conta depois de confirmação explícita. A sincronização entre aparelhos precisa do back end. |
 | RF29 Integração com a API | MVP | **Atende** | `services/analysesApi.js`, `services/http.js`, `domain/analysis.js` | `analysesApi.test.js`, `http.test.js`, `analysis.test.js`, `analysisRun.test.jsx` | Testes de sucesso, análise inconclusiva, erro de validação, indisponibilidade (rede, 502, 503), tempo limite e versão incompatível. Não há teste contra a API real em CI (seção 11). |
-| RF30 Informações e privacidade | MVP | **Atende** (textos escritos a partir do que o código faz) | `content/how.js`, `content/privacy.js`, `HowPage.jsx`, `PrivacyPage.jsx` | `how.test.js`, `privacy.test.js` | Os textos mudam conforme `VITE_*` (contas e feedback em demonstração ou desligados; fontes e link no back end ou não). Testes proíbem promessas que o código não cumpre (criptografia, "100%", garantias, nomes de serviços externos). Pendências jurídicas estão listadas na própria página. |
+| RF30 Informações e privacidade | MVP | **Parcial** (textos alinhados ao fluxo atual; revisão jurídica pendente) | `content/how.js`, `content/privacy.js`, `HowPage.jsx`, `PrivacyPage.jsx` | `how.test.js`, `privacy.test.js` | Os textos informam que link e fontes existem e descrevem a possível síntese por IA externa. Contas e feedback continuam em demonstração. Os textos ainda dependem de revisão jurídica e da correção das limitações de correspondência entre fonte e alegação. |
 | RF31 Cadastro, login e logout | MVP | **Demonstração** | `AuthPage.jsx`, `AccountPage.jsx`, `domain/auth.js` | `AuthPage.test.jsx`, `AccountPage.test.jsx`, `auth.test.js` | Pede só e-mail, senha e aceite da privacidade. A demonstração não guarda e-mail nem senha. Mensagem de falha de login não revela se a conta existe. Autenticação real é da Etapa 4. |
 | RF32 Recuperação e sessões | MVP | **Demonstração** | `RecoveryPage.jsx` | `RecoveryPage.test.jsx` | Fluxo de pedido de recuperação; o código ou link de uso único é do back end. |
 | RF33 Limite de visitante | MVP | **Parcial** | `domain/visitorLimit.js`, `services/visitorLimitStore.js`, `LimitDialog.jsx`, `UsageMeter.jsx` | `visitorLimit.test.js`, `analysisRun.test.jsx`, `stores.test.js` | Três análises em 24 h a partir da primeira contabilizada; texto e link no mesmo contador; só resultado ou análise inconclusiva consome; recusa por validação e falha técnica não consomem; a quarta não inicia e mostra cadastro, login e o tempo restante. **O contador existe só no navegador** (limpar o armazenamento o reinicia, risco conhecido do RNF19); o contador no servidor é da Etapa 4. |
@@ -306,7 +308,7 @@ Os testes citados rodam com `npm test` (808 testes em 31 arquivos).
 | RNF08 Acessibilidade | MVP | **Parcial** | `tokens.test.js`, `eslint-plugin-jsx-a11y`, `vitest-axe` nos testes de página, auditoria no navegador (seção 7) | Automático e verificações no navegador: feitos. **Faltam** os testes manuais com leitor de tela real e a validação com pessoas idosas, que o critério de aceite exige. |
 | RNF10 Privacidade e retenção | MVP | **Atende** (lado da interface) | `services/storage.js`, `content/privacy.js` | A interface não registra texto nem dados pessoais (sem `console.*`, sem telemetria). Prazo de guarda no servidor: **a definir pela equipe** (a página de privacidade diz isso). Comentário de feedback: prazo de 30 dias descrito quando o feedback for real. |
 | RNF11 Arquitetura | MVP | **Atende** | Seção 4.3; contratos em JSDoc verificados por `tsc` (`npm run typecheck`) | Interface separada da API por um contrato HTTP; nenhuma ferramenta de implantação é exigida (Docker é opcional). |
-| RNF13 Testes | MVP | **Parcial** | 808 testes; `npm run check` (lint + tipos + testes + build) | Falta configurar a **integração contínua** que impede a publicação em caso de falha; o comando já existe. |
+| RNF13 Testes | MVP | **Parcial** | Testes automatizados; `npm run check` (lint + tipos + testes + build) | Falta configurar a **integração contínua** que impede a publicação em caso de falha; o comando já existe. |
 | RNF14 Responsividade | MVP | **Atende** | Verificado no navegador: 29 larguras (320 a 1.440 px) × 9 rotas, sem rolagem horizontal; fonte padrão ampliada a 150% e 200% | Sem sobreposição, corte ou perda de função nas telas medidas. |
 | RNF15 Compatibilidade | MVP | **Não verificado** | — | Só foi testado em **Chromium**. A matriz de compatibilidade (Chrome, Edge, Firefox e Safari, duas versões) **não foi preenchida**. O CSS e o JavaScript usam recursos disponíveis nesses navegadores, mas isso não substitui o teste. |
 | RNF16 Segurança da aplicação web | MVP | **Atende** (lado da interface) | `deploy/security-headers.conf`, `hygiene.test.js` | CSP restritiva (sem script nem estilo embutido, `connect-src 'self'`), React escapa texto, links validados, sem segredo no pacote. Verificado no navegador com a CSP aplicada: zero erros no console em todas as telas e fluxos. **HTTPS, CORS e limite de requisições** dependem da implantação e do back end. |
@@ -406,7 +408,7 @@ uma pode ser trocada**; indico onde.
 | 1 | Base visual: **protótipo v2 (HTML)**, e não o `apura-front 2.zip` | O zip tinha outra identidade e usava a rota antiga `POST /analisar`, que não existe na API v1. | `tokens.css` |
 | 2 | **Figma não consultado** | Acesso recusado pelo Figma. | Dar acesso ao arquivo ou exportar cores e fontes; ajustar `tokens.css`. |
 | 3 | Vite + nginx na mesma origem tratados como confirmados | ADR-006 estava "proposta, a confirmar". | `deploy/`, `VITE_API_BASE_URL` |
-| 4 | **Aba "Inserir link" ligada** por padrão | O RF24 manda oferecer texto e URL. Enquanto a API responde 501, a tela explica e leva ao texto. | `VITE_FEATURE_URL_INPUT=false` mostra a aba como "Em breve". |
+| 4 | **Aba "Inserir link" ligada** por padrão | O RF24 manda oferecer texto e URL; a API v1 já processa links. | `VITE_FEATURE_URL_INPUT=false` mostra a aba como "Em breve". |
 | 5 | Cadastro pede **só e-mail, senha e aceite da privacidade** | RF31: "apenas os dados necessários". O protótipo pedia também o nome. | `AuthPage.jsx` |
 | 6 | Histórico local **ligado por padrão**, com chave para desligar | RF20 diz "opcional". | `services/historyStore.js` |
 | 7 | Contas e feedback em **demonstração**, com aviso visível | O back end não tem esses endpoints (Etapa 4). | `VITE_ACCOUNTS_MODE`, `VITE_FEEDBACK_MODE`; trocar o gateway em `services/index.js`. |
@@ -415,10 +417,10 @@ uma pode ser trocada**; indico onde.
 | 10 | O campo de texto **não tem `maxlength`** | RF01: "sem corte silencioso". Passou do limite, o contador avisa e o envio fica bloqueado. | — |
 | 11 | **Sem progresso fictício** | RF25. As etapas "extração" e "consulta a fontes" só entram quando existir endpoint de acompanhamento. | `ProcessingPanel.jsx` |
 | 12 | Escala linear de risco no lugar do medidor circular | Seção 2 (Few; Cleveland & McGill). | `RiskScale.jsx` |
-| 13 | Promessa "Referências rastreáveis" trocada por "A decisão é sua" | RF30: o texto deve corresponder ao que o sistema faz. | `HomePage.jsx` |
+| 13 | Promessa "Referências rastreáveis" trocada por "A decisão é sua" | A relação entre cada fonte e a alegação ainda é heurística. | `HomePage.jsx` |
 | 14 | Botão "Usar texto de exemplo" mantido; **conta no limite do visitante** | Veio do protótipo; é uma análise de verdade. | `AnalysisForm.jsx` |
 | 15 | Índice exibido com até 2 casas decimais; pesos e sinais na área técnica também | Não esconder o valor que a API calcula. | `domain/format.js` |
-| 16 | Falha de evidência: "Tentar de novo" busca de novo `GET /analyses/{id}/` | Não há endpoint específico para refazer a consulta. | `ResultPage.jsx` |
+| 16 | Falha de evidência: "Tentar de novo" faz `GET /analyses/{id}/` | A consulta lê o resultado persistido; ela não refaz a busca externa. | `ResultPage.jsx` |
 | 17 | Aviso "Desfazer" fica no fim da ordem de tabulação | Documentado como trade-off; o aviso é operável por teclado e pausa ao receber foco ou mouse. | `ToastRegion.jsx` |
 | 18 | Texto de privacidade escrito **só** com o que o código faz; prazo de retenção "a definir pela equipe" | RF30 e RNF10. Precisa de revisão jurídica. | `content/privacy.js` |
 | 19 | Node 22.12 ou 24 | Exigência do Vite 8. | `package.json` (`engines`) |
@@ -426,8 +428,8 @@ uma pode ser trocada**; indico onde.
 ### 9.2 Perguntas em aberto (para a equipe)
 
 1. **Figma:** dar acesso ao arquivo (ou exportar cores e fontes) para conferir a identidade visual?
-2. **Back end, Etapa 2 e 3:** confirmar os nomes dos códigos de erro propostos (seção 5) e o
-   formato dos campos extraídos da página (RF02), das entidades (RF09) e das fontes (RF08).
+2. **Contrato com o back end:** alinhar os códigos de falha de URL (seção 5) e decidir se a API
+   deve expor os metadados extraídos da página (RF02), entidades (RF09) e falhas da busca (RF07).
 3. **RF25:** haverá um endpoint de acompanhamento com as etapas reais?
 4. **RF06:** como a pessoa confirma ou corrige a alegação (contrato da API)?
 5. **Etapa 4:** contratos de conta, recuperação, exclusão, histórico sincronizado e feedback.
@@ -447,8 +449,8 @@ uma pode ser trocada**; indico onde.
 - **Só Chromium** foi usado nos testes de navegador (RNF15 pendente).
 - **Leitor de tela e pessoas idosas** não participaram (RNF08 pendente).
 - **Contador de visitante no navegador:** limpar os dados do navegador o reinicia (risco do RNF19).
-- **Faixa "Requer atenção" estreita** enquanto o back end só devolve sinais do modelo e
-  linguísticos: o índice tende a cair nas faixas extremas. É um efeito do back end, não da tela.
+- **Relação entre fonte e alegação heurística:** títulos e vereditos podem indicar uma relação
+  incorreta; o índice de risco usa essa classificação quando há fonte compatível ou conflitante.
 - **Endereços que não existem** recebem HTTP 200 com a tela "Página não encontrada" (o servidor
   devolve `index.html` para qualquer caminho): é o comportamento padrão de uma aplicação de página
   única. Não afeta o uso; só muda como ferramentas externas (buscadores, monitoramento) enxergam
@@ -461,7 +463,7 @@ uma pode ser trocada**; indico onde.
 
 ```bash
 npm ci
-npm run check        # eslint + tsc + vitest (808 testes) + build de produção
+npm run check        # eslint + tsc + vitest + build de produção
 npm run dev          # servidor de desenvolvimento (proxy de /api para DEV_API_PROXY_TARGET)
 ```
 

@@ -48,6 +48,13 @@ export const SUPPORTED_API_VERSIONS = Object.freeze(['v1'])
  *   aggregation: string | null,
  *   tokensAnalyzed: number | null,
  *   tokensTotal: number | null,
+ *   discourseType: string | null,
+ *   discourseLabel: string | null,
+ *   isOutOfDomain: boolean,
+ *   trainingScope: string | null,
+ *   uncertaintyWarning: string | null,
+ *   semanticComparison: { consensus_status: string, consensus_summary: string } | null,
+ *   lexicalAnalysis: { hedging_terms: string[] } | null,
  * }} ModelInfo
  *
  * @typedef {{
@@ -80,6 +87,7 @@ export const SUPPORTED_API_VERSIONS = Object.freeze(['v1'])
  *   recommendations: string[],
  *   versions: Versions,
  *   durationMs: number | null,
+ *   expert: Record<string, unknown> | null,
  * }} Analysis
  */
 
@@ -199,6 +207,8 @@ function normalizeIndicators(raw) {
 /** @param {unknown} raw @returns {ModelInfo} */
 function normalizeModel(raw) {
   const m = isRecord(raw) ? raw : {}
+  const semantic = isRecord(m.semantic_comparison) ? m.semantic_comparison : null
+  const lexical = isRecord(m.lexical_analysis) ? m.lexical_analysis : null
   return {
     label: asString(m.label) || null,
     fakeProbability: asNumberOrNull(m.fake_probability),
@@ -215,8 +225,10 @@ function normalizeModel(raw) {
     isOutOfDomain: m.is_out_of_domain === true,
     trainingScope: asString(m.training_scope) || null,
     uncertaintyWarning: asString(m.uncertainty_warning) || null,
-    semanticComparison: isRecord(m.semantic_comparison) ? m.semantic_comparison : null,
-    lexicalAnalysis: isRecord(m.lexical_analysis) ? m.lexical_analysis : null,
+    semanticComparison: semantic
+      ? { consensus_status: asString(semantic.consensus_status), consensus_summary: asString(semantic.consensus_summary) }
+      : null,
+    lexicalAnalysis: lexical ? { hedging_terms: asStringArray(lexical.hedging_terms) } : null,
   }
 }
 

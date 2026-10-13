@@ -3,8 +3,8 @@
 // limite de visitante e tratamento de feedback.
 //
 // O texto descreve o que o sistema FAZ hoje. A origem de cada afirmação:
-//   - back end (verificAI, commit 63a0382): models.Analysis, preprocessing.summarize_claim e
-//     mask_pii, views.py e pipeline.py (nenhuma chamada a serviços externos);
+//   - back end: models.Analysis, preprocessing.summarize_claim e mask_pii,
+//     pipeline.py, factcheck.py e llm.py;
 //   - esta interface: src/services (storage, historyStore, visitorLimitStore, gateways).
 // Onde a equipe ainda não decidiu algo (prazo de guarda, base legal, canal de atendimento), o texto
 // diz que está por definir, em vez de inventar. Tudo isso precisa de revisão jurídica antes de
@@ -39,15 +39,15 @@ function contentSection({ backend }) {
     title: 'O conteúdo que você envia',
     blocks: [
       p(
-        `O texto que você cola (de ${formatNumber(TEXT_LIMITS.min)} a ${formatNumber(TEXT_LIMITS.max)} caracteres) é enviado ao servidor do Apura só para ser analisado. O servidor não guarda o texto: ele é usado durante a análise e não fica gravado.`,
+        `O texto que você cola (de ${formatNumber(TEXT_LIMITS.min)} a ${formatNumber(TEXT_LIMITS.max)} caracteres) é enviado ao servidor do Apura para ser analisado. O servidor não guarda o texto integral como campo da análise, mas guarda o resultado e alguns dados derivados dele.`,
       ),
       backend.sources
-        ? p('Para consultar fontes, a alegação resumida pode ser enviada a serviços de busca.')
+        ? p('Para procurar checagens, o servidor envia palavras do título ou da alegação a serviços de busca. Se uma chave de IA externa estiver configurada, também pode enviar o título, até 1.200 caracteres do corpo e resumos das fontes para gerar a explicação. Sem essa chave, usa uma síntese local.')
         : p('Nesta versão, o texto é analisado dentro do próprio servidor do Apura. Ele não é enviado a outros serviços.'),
       p('O que o servidor guarda de cada análise:'),
       ul([
         'um resumo curto da alegação (o título ou a primeira frase, com até 140 caracteres), com e-mails, CPFs e telefones mascarados;',
-        'o resultado: categoria, índice de risco, explicações e limitações;',
+        'o resultado: categoria, índice de risco, explicações, fontes e limitações; esses campos derivados podem repetir trechos do conteúdo enviado ou encontrado;',
         'as versões do modelo e das regras usadas, a data e a duração da análise;',
         'um identificador anônimo do seu navegador, criado ao acessar o site.',
       ]),

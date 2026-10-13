@@ -4,6 +4,7 @@ django-cors-headers>=4.4
 gunicorn>=23.0
 psycopg[binary]>=3.2
 requests>=2.31
+urllib3>=2,<3
 beautifulsoup4>=4.12
 trafilatura>=2.3
 

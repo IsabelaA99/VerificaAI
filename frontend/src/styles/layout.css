@@ -120,7 +120,7 @@
   align-items: center;
   min-height: var(--target-min);
   font-size: var(--text-ui);
-  font-weight: var(--weight-bold);
+  font-weight: var(--weight-medium);
   text-decoration: none;
 }
 
@@ -162,23 +162,19 @@
 }
 
 .site-footer__row {
-  display: flex;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
   align-items: center;
-  justify-content: space-between;
-  gap: var(--space-8);
+  gap: var(--space-6);
 }
 
-.site-footer__left {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: var(--space-2) var(--space-5);
+.site-footer__row > .brand {
+  justify-self: start;
 }
 
-/* A frase fica ao lado da marca e só desce quando nem 8rem sobram (fonte ampliada). */
-.site-footer__left p {
-  flex: 1 1 8rem;
-  min-width: 0;
+.site-footer__tagline {
+  text-align: center;
+  white-space: nowrap;
 }
 
 .site-footer .brand__mark {
@@ -192,7 +188,10 @@
 .site-footer__links {
   display: flex;
   flex-wrap: wrap;
+  justify-content: flex-end;
   gap: var(--space-1) var(--space-6);
+  min-width: 0;
+  justify-self: end;
 }
 
 .site-footer__links a {
@@ -200,6 +199,28 @@
   align-items: center;
   min-height: var(--target-min);
   color: var(--color-text);
+}
+
+/* Acesso ao WhatsApp permanece visível durante a navegação. */
+.whatsapp-link {
+  position: fixed;
+  right: calc(var(--space-6) + env(safe-area-inset-right));
+  bottom: calc(var(--space-6) + env(safe-area-inset-bottom));
+  z-index: var(--z-floating);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: var(--whatsapp-link-size);
+  height: var(--whatsapp-link-size);
+  border-radius: var(--radius-round);
+  background: var(--color-whatsapp);
+  color: var(--color-on-whatsapp);
+  box-shadow: var(--shadow-toast);
+  transition: background var(--duration-fast) var(--ease-out);
+}
+
+.whatsapp-link:hover {
+  background: var(--color-whatsapp-hover);
 }
 
 /* ---- Cabeçalho de página ------------------------------------------------ */
@@ -235,7 +256,7 @@
 
 .page-heading__lead {
   max-width: 39rem;
-  font-size: var(--text-ui);
+  font-size: var(--text-lead);
   color: var(--color-text-muted);
 }
 
@@ -252,6 +273,20 @@
 
   .site-nav__list {
     gap: var(--space-4);
+  }
+
+  .site-footer__row {
+    grid-template-columns: minmax(0, 1fr) minmax(0, auto);
+  }
+
+  .site-footer__tagline {
+    grid-row: 2;
+    grid-column: 1 / -1;
+  }
+
+  .site-footer__links {
+    grid-row: 1;
+    grid-column: 2;
   }
 }
 
@@ -304,27 +339,17 @@
     width: 100%;
   }
 
-  .site-footer__row {
-    align-items: flex-start;
-  }
-
-  .site-footer__left {
-    flex-direction: column;
-    align-items: flex-start;
-    gap: var(--space-3);
-  }
-
-  /* Em coluna, "8rem" seria uma altura: volta ao tamanho do próprio texto. */
-  .site-footer__left p {
-    flex: 0 1 auto;
-  }
-
   .page-heading {
     align-items: flex-start;
   }
 }
 
 @media (max-width: 32.5em) {
+  .whatsapp-link {
+    right: calc(var(--space-4) + env(safe-area-inset-right));
+    bottom: calc(var(--space-4) + env(safe-area-inset-bottom));
+  }
+
   .brand__mark {
     width: 2.75rem;
   }
@@ -339,16 +364,24 @@
   }
 
   .site-footer__row {
-    flex-direction: column;
+    grid-template-columns: minmax(0, 1fr);
     gap: var(--space-5);
   }
 
-  .site-footer__left {
-    flex-direction: row;
-    align-items: center;
+  .site-footer__row > .brand {
+    justify-self: center;
   }
 
-  .site-footer__left p {
-    flex: 1 1 8rem;
+  .site-footer__tagline {
+    grid-row: 2;
+    grid-column: 1;
+    white-space: normal;
+  }
+
+  .site-footer__links {
+    grid-row: 3;
+    grid-column: 1;
+    justify-content: center;
+    justify-self: center;
   }
 }
