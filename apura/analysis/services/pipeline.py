@@ -88,7 +88,7 @@ def _execute_pipeline(
     fact_res = factcheck.search_fact_checks(claim_query)
     evidence_conflict = fact_res.get("conflict_score")
 
-    # 4. Síntese explicativa via LLM (Gemini / OpenAI / Síntese Neural Especializada)
+    # 4. Síntese explicativa via LLM (Gemini / Groq / OpenAI / Síntese Neural Especializada)
     llm_res = llm.synthesize_explanation(
         title=news.title,
         body=news.body,
@@ -97,6 +97,7 @@ def _execute_pipeline(
         model_label=cls.label,
         linguistic_indicators=ling,
         sources=fact_res.get("sources", []),
+        source_domain=source_domain,
     )
 
     # 5. Cálculo do Índice de Risco Ponderado
@@ -104,14 +105,21 @@ def _execute_pipeline(
     consensus_status = sem_comp.get("consensus_status", "sem_consenso_ou_debate")
     discourse_type = getattr(llm_res, "discourse_type", "factual")
 
-    # Se não houver fact-checks indexados na API externa, a comparação semântica com o consenso supre o sinal de evidência
+    is_traditional = llm.is_traditional_press_domain(source_domain)
+    has_conflicting = any(s.get("relation") == "conflicting" for s in fact_res.get("sources", []))
+
+    if is_traditional and not has_conflicting:
+        consensus_status = "conforme_consenso"
+        discourse_type = "factual"
+
+    # Se não houver fact-checks indexados na API externa, a comparação semântica com o consenso só supre evidência
+    # para conteúdos conspiratórios fora de domínio, NUNCA sobrepondo a imprensa tradicional
     if evidence_conflict is None:
-        if consensus_status == "diverge_consenso":
-            evidence_conflict = 0.90
-        elif discourse_type == "conspiracy_or_theoretical":
-            evidence_conflict = 0.75
-        elif consensus_status == "conforme_consenso":
-            evidence_conflict = 0.05
+        if not is_traditional:
+            if consensus_status == "diverge_consenso" or discourse_type in ("teoria_conspiratoria", "conspiracy_or_theoretical"):
+                evidence_conflict = 0.90
+            elif consensus_status == "conforme_consenso":
+                evidence_conflict = 0.05
 
     signals = {
         "model_fake_probability": cls.fake_probability,
@@ -133,15 +141,28 @@ def _execute_pipeline(
     else:
         status = risk.status_for_index(risk_info["value"], rules)
 
-    # Salvaguarda epistemológica: matérias que divergem do consenso ou veiculam teorias conspiratórias
-    # não podem receber o selo ingênuo de "poucos sinais de risco" apenas pelo estilo culto da redação
-    if (consensus_status == "diverge_consenso" or discourse_type == "conspiracy_or_theoretical") and status == risk.STATUS_LOW:
-        status = risk.STATUS_ATTENTION
-        if risk_info["value"] is not None and risk_info["value"] <= rules.low_max:
-            risk_info["value"] = round(rules.low_max + 10.0, 2)
+    # Salvaguarda epistemológica: aplicada EXCLUSIVAMENTE para teorias conspiratórias reais fora de domínio
+    # ou matérias com checagem conflitante comprovada. NUNCA sobrepor matérias da imprensa tradicional.
+    if not is_traditional and (has_conflicting or discourse_type in ("teoria_conspiratoria", "conspiracy_or_theoretical")):
+        if status == risk.STATUS_LOW:
+            status = risk.STATUS_ATTENTION
+            if risk_info["value"] is not None and risk_info["value"] <= rules.low_max:
+                risk_info["value"] = round(rules.low_max + 10.0, 2)
+
+    is_out_of_domain = bool(
+        not is_traditional and (
+            discourse_type in ("teoria_conspiratoria", "conspiracy_or_theoretical") or
+            (consensus_status == "diverge_consenso" and cls.fake_probability < 0.35 and has_conflicting)
+        )
+    )
+    training_scope = "out_of_domain_conspiracy" if is_out_of_domain else ("in_domain_press" if is_traditional else "in_domain_general")
+
+    cls_dict = cls.to_dict()
+    cls_dict["is_out_of_domain"] = is_out_of_domain
+    cls_dict["training_scope"] = training_scope
 
     technical = {
-        "classification": cls.to_dict(),
+        "classification": cls_dict,
         "linguistic_indicators": ling,
         "risk": risk_info,
         "rules": {
@@ -180,7 +201,7 @@ def _execute_pipeline(
         },
         "limitations": _limitations(
             news, cls, rules, evidence_enabled=True,
-            consensus_divergent=(consensus_status == "diverge_consenso"),
+            consensus_divergent=(consensus_status == "diverge_consenso" and not is_traditional),
         ),
     }
 

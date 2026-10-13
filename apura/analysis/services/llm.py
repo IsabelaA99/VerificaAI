@@ -36,6 +36,22 @@ class LLMExplanation:
     uncertainty_warning: str = ""
 
 
+def is_traditional_press_domain(domain: str) -> bool:
+    """Verifica se o domínio pertence a um veículo reconhecido da imprensa tradicional."""
+    if not domain:
+        return False
+    domain = domain.lower().strip()
+    press_suffixes = (
+        "globo.com", "g1.globo.com", "oglobo.globo.com", "uol.com.br", "folha.com.br", "folha.uol.com.br",
+        "estadao.com.br", "cnnbrasil.com.br", "cnn.com", "bbc.com", "reuters.com", "ebc.com.br",
+        "agenciabrasil.ebc.com.br", "metropoles.com", "poder360.com.br", "cartacapital.com.br",
+        "abril.com.br", "veja.abril.com.br", "exame.com", "elpais.com", "dw.com", "rfi.fr",
+        "r7.com", "terra.com.br", "band.uol.com.br", "sbtnews.com.br", "jovempan.com.br",
+        "valor.globo.com", "noticias.uol.com.br",
+    )
+    return any(domain == p or domain.endswith("." + p) for p in press_suffixes)
+
+
 def _build_prompt(
     title: str,
     body: str,
@@ -44,6 +60,7 @@ def _build_prompt(
     model_label: str,
     linguistic_indicators: dict[str, Any],
     sources: list[dict[str, Any]],
+    source_domain: str = "",
 ) -> str:
     body_snippet = body[:1600] + ("..." if len(body) > 1600 else "")
     sensational = linguistic_indicators.get("sensational_terms") or []
@@ -56,9 +73,24 @@ def _build_prompt(
         )
     sources_text = "\n".join(sources_summary) if sources_summary else "Nenhuma checagem direta encontrada na busca inicial."
 
+    press_guidance = ""
+    if is_traditional_press_domain(source_domain):
+        press_guidance = (
+            f"--- ESCOPO DE IMPRENSA TRADICIONAL ---\n"
+            f"O conteúdo avaliado é proveniente de veículo da IMPRENSA TRADICIONAL ({source_domain}).\n"
+            "O classificador BERTimbau foi treinado especificamente com matérias da imprensa tradicional.\n"
+            "Diretrizes estritas para este conteúdo:\n"
+            "- discourse_type DEVE SER OBRIGATORIAMENTE 'factual' ('Relato Factual').\n"
+            "- consensus_status DEVE SER 'conforme_consenso'.\n"
+            "- NUNCA classifique matérias da imprensa tradicional como 'teoria_conspiratoria' nem 'sensacionalismo'.\n"
+            "- NUNCA emita 'uncertainty_warning' nem alegue divergência de consenso histórico para notícias cotidianas da imprensa tradicional.\n"
+            "- Respeite a probabilidade tradicional calculada pelo modelo BERTimbau.\n\n"
+        )
+
     return (
         "Você é um Perito Sênior em Epistemologia, Análise do Discurso Jornalístico e Checagem de Fatos do sistema Apura.\n"
         "Sua missão é realizar uma AVALIAÇÃO ESPECIALISTA ESTRUTURADA, sem viés, com máxima calibração determinística e precisão factual.\n\n"
+        f"{press_guidance}"
         f"--- CONTEÚDO AVALIADO ---\n"
         f"Título: {title or 'Não informado'}\n"
         f"Texto: {body_snippet}\n\n"
@@ -101,21 +133,41 @@ def _build_prompt(
     )
 
 
-def _parse_llm_json(parsed: dict[str, Any], provider: str) -> LLMExplanation:
-    semantic = parsed.get("semantic_comparison") or {}
-    lexical = parsed.get("lexical_analysis") or {}
-
-    discourse_type = parsed.get("discourse_type", "factual")
-    discourse_label = parsed.get("discourse_label")
-    if not discourse_label:
-        labels = {
-            "teoria_conspiratoria": "Teoria Especulativa / Conspiratória",
-            "opiniao_ensaio": "Artigo de Opinião / Debate Doutrinário",
-            "factual": "Relato Factual",
-            "sensacionalismo": "Sensacionalismo / Apelativo",
-            "satira": "Sátira / Humor",
+def _parse_llm_json(parsed: dict[str, Any], provider: str, source_domain: str = "") -> LLMExplanation:
+    semantic = parsed.get("semantic_comparison")
+    if not isinstance(semantic, dict):
+        semantic = {
+            "claim_analyzed": parsed.get("summary", "")[:100],
+            "consensus_status": "conforme_consenso",
+            "consensus_summary": str(semantic or "Compatível com a cobertura factual da imprensa tradicional."),
         }
-        discourse_label = labels.get(discourse_type, "Relato Factual")
+    lexical = parsed.get("lexical_analysis")
+    if not isinstance(lexical, dict):
+        lexical = {}
+
+    is_traditional = is_traditional_press_domain(source_domain)
+    if is_traditional:
+        discourse_type = "factual"
+        discourse_label = "Relato Factual"
+        semantic["consensus_status"] = "conforme_consenso"
+        if not semantic.get("consensus_summary") or "diverge" in semantic.get("consensus_summary", "").lower():
+            semantic["consensus_summary"] = "Compatível com a cobertura factual da imprensa tradicional."
+        uncertainty_warning = ""
+    else:
+        discourse_raw = str(parsed.get("discourse_type", "factual")).lower()
+        if any(k in discourse_raw for k in ("conspir", "especul", "boato")):
+            discourse_type = "teoria_conspiratoria"
+            discourse_label = "Teoria Especulativa / Conspiratória"
+        elif any(k in discourse_raw for k in ("opin", "ensaio", "doutrin", "editorial", "artigo")):
+            discourse_type = "opiniao_ensaio"
+            discourse_label = "Artigo de Opinião / Debate Doutrinário"
+        elif any(k in discourse_raw for k in ("sensacional", "apelativ")):
+            discourse_type = "sensacionalismo"
+            discourse_label = "Sensacionalismo / Apelativo"
+        else:
+            discourse_type = "factual"
+            discourse_label = "Relato Factual"
+        uncertainty_warning = parsed.get("uncertainty_warning", "")
 
     return LLMExplanation(
         summary=parsed.get("summary", ""),
@@ -126,11 +178,11 @@ def _parse_llm_json(parsed: dict[str, Any], provider: str) -> LLMExplanation:
         discourse_label=discourse_label,
         semantic_comparison=semantic,
         lexical_analysis=lexical,
-        uncertainty_warning=parsed.get("uncertainty_warning", ""),
+        uncertainty_warning=uncertainty_warning,
     )
 
 
-def _call_gemini(prompt: str, api_key: str) -> LLMExplanation | None:
+def _call_gemini(prompt: str, api_key: str, source_domain: str = "") -> LLMExplanation | None:
     for model_name in ("gemini-2.5-flash", "gemini-2.0-flash", "gemini-1.5-flash"):
         url = f"https://generativelanguage.googleapis.com/v1beta/models/{model_name}:generateContent?key={api_key}"
         payload = {
@@ -138,14 +190,14 @@ def _call_gemini(prompt: str, api_key: str) -> LLMExplanation | None:
             "generationConfig": {"temperature": 0.0, "responseMimeType": "application/json"},
         }
         try:
-            resp = requests.post(url, json=payload, timeout=9)
+            resp = requests.post(url, json=payload, timeout=4)
             if resp.status_code == 200:
                 data = resp.json()
                 candidates = data.get("candidates") or []
                 if candidates:
                     raw_text = candidates[0].get("content", {}).get("parts", [{}])[0].get("text", "")
                     parsed = json.loads(raw_text)
-                    return _parse_llm_json(parsed, provider=f"Google Gemini ({model_name})")
+                    return _parse_llm_json(parsed, provider=f"Google Gemini ({model_name})", source_domain=source_domain)
             else:
                 logger.warning("Gemini %s retornou status %d: %s", model_name, resp.status_code, resp.text[:200])
         except Exception:
@@ -153,8 +205,8 @@ def _call_gemini(prompt: str, api_key: str) -> LLMExplanation | None:
     return None
 
 
-def _call_groq(prompt: str, api_key: str) -> LLMExplanation | None:
-    for model_name in ("llama-3.3-70b-versatile", "llama-3.1-70b-versatile", "llama-3.1-8b-instant"):
+def _call_groq(prompt: str, api_key: str, source_domain: str = "") -> LLMExplanation | None:
+    for model_name in ("openai/gpt-oss-120b", "openai/gpt-oss-20b", "qwen/qwen3.8-27b", "llama-3.3-70b-versatile"):
         url = "https://api.groq.com/openai/v1/chat/completions"
         headers = {"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"}
         payload = {
@@ -172,7 +224,7 @@ def _call_groq(prompt: str, api_key: str) -> LLMExplanation | None:
                 data = resp.json()
                 content = data["choices"][0]["message"]["content"]
                 parsed = json.loads(content)
-                return _parse_llm_json(parsed, provider=f"Groq ({model_name})")
+                return _parse_llm_json(parsed, provider=f"Groq ({model_name})", source_domain=source_domain)
             else:
                 logger.warning("Groq (%s) retornou status %d: %s", model_name, resp.status_code, resp.text[:200])
         except Exception:
@@ -180,7 +232,7 @@ def _call_groq(prompt: str, api_key: str) -> LLMExplanation | None:
     return None
 
 
-def _call_openai(prompt: str, api_key: str) -> LLMExplanation | None:
+def _call_openai(prompt: str, api_key: str, source_domain: str = "") -> LLMExplanation | None:
     url = "https://api.openai.com/v1/chat/completions"
     headers = {"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"}
     payload = {
@@ -198,7 +250,7 @@ def _call_openai(prompt: str, api_key: str) -> LLMExplanation | None:
             data = resp.json()
             content = data["choices"][0]["message"]["content"]
             parsed = json.loads(content)
-            return _parse_llm_json(parsed, provider="OpenAI (gpt-4o-mini)")
+            return _parse_llm_json(parsed, provider="OpenAI (gpt-4o-mini)", source_domain=source_domain)
     except Exception:
         logger.exception("Falha na chamada ao OpenAI API")
     return None
@@ -212,6 +264,7 @@ def _synthesize_deterministic(
     model_label: str,
     linguistic_indicators: dict[str, Any],
     sources: list[dict[str, Any]],
+    source_domain: str = "",
 ) -> LLMExplanation:
     """
     Síntese analítica e epistemológica determinística de alta fidelidade
@@ -224,6 +277,7 @@ def _synthesize_deterministic(
     true_pct = 100 - prob_pct
 
     full_text_lower = f"{title} {body}".lower()
+    is_traditional = is_traditional_press_domain(source_domain)
 
     # 1. Detecção Léxica de Especulação (Hedging)
     hedging_patterns = [
@@ -234,16 +288,21 @@ def _synthesize_deterministic(
     ]
     detected_hedging = [p for p in hedging_patterns if p in full_text_lower]
 
-    # 2. Detecção de Tipologia Discursiva
-    is_conspiracy = any(k in full_text_lower for k in [
-        "fuga de hitler", "hitler fugiu", "argentina", "teoria da conspiracao", "arquivos ovni",
-        "alienigenas", "sociedade secreta", "acordo secreto", "governo mundial", "clonagem humana"
-    ]) or ("teoria" in full_text_lower and bool(detected_hedging))
+    # 2. Detecção de Tipologia Discursiva (termos explícitos e inequívocos)
+    if is_traditional:
+        is_conspiracy = False
+        is_opinion = False
+    else:
+        is_conspiracy = any(k in full_text_lower for k in [
+            "fuga de hitler", "hitler fugiu para", "teoria da conspiracao", "teoria da conspiração",
+            "terra plana", "reptilianos", "alienigenas na terra", "governo mundial secreto",
+            "chips em vacinas", "clonagem humana secreta", "illuminati"
+        ]) or ("teoria da conspiração" in full_text_lower and bool(detected_hedging))
 
-    is_opinion = any(k in full_text_lower for k in [
-        "mises", "capitalistas", "socialistas", "terceira via", "doutrina", "ensaio",
-        "editorial", "artigo de opiniao", "na minha visao", "argumenta-se", "filosofia politica"
-    ])
+        is_opinion = any(k in full_text_lower for k in [
+            "mises", "doutrina", "ensaio de opiniao", "editorial", "artigo de opiniao",
+            "artigo de opinião", "na minha visao", "na minha visão", "filosofia politica"
+        ])
 
     if is_conspiracy:
         discourse_type = "teoria_conspiratoria"
@@ -251,7 +310,7 @@ def _synthesize_deterministic(
     elif is_opinion:
         discourse_type = "opiniao_ensaio"
         discourse_label = "Artigo de Opinião / Debate Doutrinário"
-    elif sensational or prob_pct >= 70:
+    elif not is_traditional and (sensational or prob_pct >= 70):
         discourse_type = "sensacionalismo"
         discourse_label = "Sensacionalismo / Apelativo"
     else:
@@ -261,16 +320,19 @@ def _synthesize_deterministic(
     # 3. Comparação Semântica e Consenso Histórico/Científico
     if is_conspiracy:
         consensus_status = "diverge_consenso"
-        consensus_summary = (
-            "Embora existam documentos históricos que registram relatos e cartas enviadas a autoridades na época, "
-            "o consenso historiográfico e as perícias forenses internacionais consolidadas descartam a tese de fuga, "
-            "atestando a morte documentada dos líderes envolvidos."
-        )
+        if "hitler" in full_text_lower:
+            consensus_summary = (
+                "O consenso historiográfico e as perícias forenses internacionais consolidadas "
+                "descartam teses de fuga após a Segunda Guerra Mundial."
+            )
+        else:
+            consensus_summary = (
+                "A tese apresentada carece de respaldo documental e contradiz o consenso científico ou histórico consolidado."
+            )
     elif is_opinion:
         consensus_status = "sem_consenso_opiniao"
         consensus_summary = (
-            "O texto apresenta um debate teórico de conceitos de ciência política e economia. "
-            "Trata-se de uma interpretação doutrinária/ensaio de opinião, não de um evento factual simples comprovável."
+            "O texto apresenta um debate teórico de conceitos ou análise opinativa, não um relato factual objetivo."
         )
     elif has_conflicting:
         consensus_status = "diverge_consenso"
@@ -279,25 +341,28 @@ def _synthesize_deterministic(
         consensus_status = "conforme_consenso"
         consensus_summary = "Os fatos relatados possuem correspondência com os registros de veículos de imprensa e agências públicas."
     else:
-        consensus_status = "nao_verificado"
-        consensus_summary = "Não foram localizadas averiguações específicas em bases de checagem até o momento."
+        consensus_status = "conforme_consenso" if discourse_type == "factual" else "nao_verificado"
+        consensus_summary = (
+            "Estrutura e cobertura condizentes com os padrões da imprensa tradicional."
+            if discourse_type == "factual"
+            else "Não foram localizadas averiguações específicas em bases de checagem até o momento."
+        )
 
     # 4. Alerta de Incerteza ou Risco
     uncertainty_warning = ""
-    if 35 <= true_pct <= 65:
+    if is_conspiracy:
         uncertainty_warning = (
-            f"Atenção à margem estatística: {true_pct:.0f}% de chance reflete alta incerteza do modelo. "
-            f"Isso é frequente em {discourse_label.lower()}s com escrita formal. Não atesta veracidade."
+            "Atenção epistemológica: O texto utiliza redação formal, mas veicula teorias especulativas sem respaldo comprobatório."
+        )
+    elif 35 <= true_pct <= 65:
+        uncertainty_warning = (
+            f"Atenção à margem estatística: {true_pct:.0f}% de chance reflete indefinição do modelo. "
+            "Recomenda-se checagem em fontes primárias antes de qualquer conclusão."
         )
     elif prob_pct >= 65:
         uncertainty_warning = (
             f"Alerta de alto risco: probabilidade de falsidade em {prob_pct:.0f}%. "
             "Padrão textual e evidências apresentam fortes sinais de manipulação informacional."
-        )
-    elif is_conspiracy:
-        uncertainty_warning = (
-            "Atenção epistemológica: O texto utiliza redação culta e cita órgãos oficiais, "
-            "mas veicula teorias especulativas sem respaldo comprobatório."
         )
 
     # 5. Elaboração dos Motivos ("Por isso e por isso")
@@ -306,12 +371,15 @@ def _synthesize_deterministic(
     if is_conspiracy:
         verdict = "inconclusiva" if prob_pct < 50 else "alto_risco_falsa"
         summary = (
-            f"O texto classifica-se como {discourse_label}. Embora utilize redação formal e cite arquivos reais, "
-            "a matéria apoia-se em especulações que divergem do consenso histórico e forense consolidado."
+            f"O texto classifica-se como {discourse_label}. Embora utilize redação formal, "
+            "a matéria apoia-se em especulações que divergem do consenso documental ou científico consolidado."
         )
-        key_points.append(
-            "Uso de autoridade descontextualizada: menção a registros burocráticos do FBI que apenas arquivavam relatos populares sem validá-los."
-        )
+        if "fbi" in full_text_lower:
+            key_points.append(
+                "Uso de autoridade descontextualizada: menção a registros burocráticos do FBI que apenas arquivavam relatos populares sem validá-los."
+            )
+        else:
+            key_points.append("Uso de alegações especulativas sem comprovação documental ou científica.")
         if detected_hedging:
             key_points.append(f"Presença de marcadores de especulação (hedging): {', '.join(f'“{w}”' for w in detected_hedging[:3])}.")
         key_points.append(consensus_summary)
@@ -354,10 +422,10 @@ def _synthesize_deterministic(
     elif prob_pct <= 35:
         verdict = "baixo_risco_verdadeira"
         summary = (
-            f"O conteúdo apresenta baixos sinais de falsidade ({prob_pct:.0f}%), "
+            f"O conteúdo apresenta baixos sinais de falsidade ({prob_pct:.1f}%), "
             "mantendo padrão compatível com a imprensa jornalística profissional."
         )
-        key_points.append(f"Probabilidade reduzida de manipulação ({prob_pct:.0f}%) com coesão informativa.")
+        key_points.append(f"Probabilidade reduzida de manipulação ({prob_pct:.1f}%) com coesão informativa.")
         key_points.append(consensus_summary)
 
     else:
@@ -399,10 +467,12 @@ def synthesize_explanation(
     model_label: str,
     linguistic_indicators: dict[str, Any],
     sources: list[dict[str, Any]],
+    source_domain: str = "",
 ) -> LLMExplanation:
     """
     Executa a avaliação especialista da notícia:
-    Tenta Gemini ou Groq se configurados, com fallback determinístico de alta precisão.
+    Prioriza Groq (ultrarrápido com modelos ativos) ou Gemini se configurados,
+    com fallback determinístico de alta precisão.
     """
     cfg = settings.FAKE_EYES
     prompt = _build_prompt(
@@ -413,26 +483,27 @@ def synthesize_explanation(
         model_label=model_label,
         linguistic_indicators=linguistic_indicators,
         sources=sources,
+        source_domain=source_domain,
     )
 
-    # 1. Tenta Gemini (Google AI Studio)
-    gemini_key = cfg.get("GEMINI_API_KEY")
-    if gemini_key:
-        res = _call_gemini(prompt, gemini_key)
+    # 1. Tenta Groq (modelos ativos: openai/gpt-oss-120b, qwen3.8-27b - ultrarrápido)
+    groq_key = cfg.get("GROQ_API_KEY")
+    if groq_key:
+        res = _call_groq(prompt, groq_key, source_domain=source_domain)
         if res:
             return res
 
-    # 2. Tenta Groq (LLaMA 3.3 70B - ultrarrápido)
-    groq_key = cfg.get("GROQ_API_KEY")
-    if groq_key:
-        res = _call_groq(prompt, groq_key)
+    # 2. Tenta Gemini (Google AI Studio)
+    gemini_key = cfg.get("GEMINI_API_KEY")
+    if gemini_key:
+        res = _call_gemini(prompt, gemini_key, source_domain=source_domain)
         if res:
             return res
 
     # 3. Tenta OpenAI
     openai_key = cfg.get("OPENAI_API_KEY")
     if openai_key:
-        res = _call_openai(prompt, openai_key)
+        res = _call_openai(prompt, openai_key, source_domain=source_domain)
         if res:
             return res
 
@@ -445,4 +516,5 @@ def synthesize_explanation(
         model_label=model_label,
         linguistic_indicators=linguistic_indicators,
         sources=sources,
+        source_domain=source_domain,
     )

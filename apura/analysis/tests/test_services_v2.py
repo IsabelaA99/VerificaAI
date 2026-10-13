@@ -87,8 +87,10 @@ class FactCheckTests(SimpleTestCase):
             self.assertEqual(res["conflict_score"], 1.0)
 
 
+@patch("analysis.services.llm._call_gemini", return_value=None)
+@patch("analysis.services.llm._call_groq", return_value=None)
 class LLMSynthesisTests(SimpleTestCase):
-    def test_deterministic_synthesis_high_risk(self):
+    def test_deterministic_synthesis_high_risk(self, mock_groq, mock_gemini):
         sources = [
             {
                 "publisher": "Fato ou Fake",
@@ -111,7 +113,7 @@ class LLMSynthesisTests(SimpleTestCase):
         self.assertTrue(any("BERTimbau" in p for p in exp.key_points))
         self.assertTrue(any("checagens" in p for p in exp.key_points))
 
-    def test_deterministic_synthesis_low_risk(self):
+    def test_deterministic_synthesis_low_risk(self, mock_groq, mock_gemini):
         exp = synthesize_explanation(
             title="Campanha de vacinação começa na próxima semana",
             body="Ministério da Saúde divulgou o calendário oficial para todos os estados.",

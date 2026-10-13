@@ -60,9 +60,11 @@ export default function VerdictCard({ analysis }) {
         const sem = model.semanticComparison || {}
         const lex = model.lexicalAnalysis || {}
         const hedging = lex.hedging_terms || []
-        const divergesFromConsensus = sem.consensus_status === 'diverge_consenso'
-        const isConspiracy = model.discourseType === 'conspiracy_or_theoretical'
-        const isDiscrepant = (divergesFromConsensus || isConspiracy) && truePct >= 50
+        const isOutOfDomain = Boolean(model.isOutOfDomain)
+        const isConspiracy = model.discourseType === 'teoria_conspiratoria' || model.discourseType === 'conspiracy_or_theoretical'
+        const isTraditionalPress = model.trainingScope === 'in_domain_press' || model.discourseType === 'factual'
+        const divergesFromConsensus = sem.consensus_status === 'diverge_consenso' && !isTraditionalPress
+        const isDiscrepant = (isOutOfDomain || isConspiracy) && truePct >= 50 && !isTraditionalPress
 
         return (
           <div className="model-prob-card">
@@ -167,7 +169,7 @@ export default function VerdictCard({ analysis }) {
             ) : null}
 
             {/* Comparação Semântica e Consenso Histórico/Científico */}
-            {sem.consensus_summary ? (
+            {sem.consensus_summary && !isTraditionalPress ? (
               <div className="model-prob-card__semantic">
                 <div className="model-prob-card__semantic-head">
                   <span className="model-prob-card__semantic-title">Comparação Semântica & Consenso</span>
@@ -184,7 +186,7 @@ export default function VerdictCard({ analysis }) {
             ) : null}
 
             {/* Marcadores Léxicos de Especulação (Hedging) */}
-            {hedging.length > 0 ? (
+            {hedging.length > 0 && !isTraditionalPress ? (
               <div className="model-prob-card__hedging">
                 <span className="model-prob-card__hedging-label">Expressões de especulação (hedging) detectadas:</span>
                 <div className="model-prob-card__chips">
