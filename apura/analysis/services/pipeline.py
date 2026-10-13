@@ -139,6 +139,11 @@ def _execute_pipeline(
             "key_points": llm_res.key_points,
             "provider": llm_res.provider,
             "verdict_tendency": llm_res.verdict_tendency,
+            "discourse_type": getattr(llm_res, "discourse_type", "factual"),
+            "discourse_label": getattr(llm_res, "discourse_label", "Relato Factual"),
+            "semantic_comparison": getattr(llm_res, "semantic_comparison", {}),
+            "lexical_analysis": getattr(llm_res, "lexical_analysis", {}),
+            "uncertainty_warning": getattr(llm_res, "uncertainty_warning", ""),
         },
         "input": {
             "type": input_type,

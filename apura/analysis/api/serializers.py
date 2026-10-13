@@ -47,6 +47,10 @@ def _explanation(obj: Analysis) -> list[str]:
     if obj.status == Analysis.Status.INCONCLUSIVE:
         items.extend(risk.ABSTENTION_MESSAGES.get(r, r) for r in obj.abstention_reasons)
 
+    # Alerta de incerteza da análise de especialista
+    if llm_info.get("uncertainty_warning"):
+        items.append(llm_info["uncertainty_warning"])
+
     # Síntese e motivos gerados pela LLM / motor analítico ("por isso e por isso")
     if llm_info.get("summary"):
         items.append(llm_info["summary"])
@@ -82,13 +86,14 @@ class AnalysisResultSerializer(serializers.ModelSerializer):
     recommendations = serializers.SerializerMethodField()
     versions = serializers.SerializerMethodField()
     risk = serializers.SerializerMethodField()
+    expert = serializers.SerializerMethodField()
 
     class Meta:
         model = Analysis
         fields = [
             "id", "api_version", "created_at", "input_type", "status", "risk_index", "claim",
             "explanation", "abstention", "evidence", "indicators", "model", "risk",
-            "limitations", "recommendations", "versions", "duration_ms",
+            "limitations", "recommendations", "versions", "duration_ms", "expert",
         ]
 
     def get_api_version(self, obj):
@@ -108,11 +113,17 @@ class AnalysisResultSerializer(serializers.ModelSerializer):
 
     def get_model(self, obj):
         cls = (obj.technical or {}).get("classification", {})
+        llm_info = (obj.technical or {}).get("llm_analysis", {})
         return {
             "label": obj.model_label,
             "fake_probability": obj.model_fake_probability,
             "confidence": obj.model_confidence,
             "calibrated": (obj.technical or {}).get("calibrator", {}).get("calibrated", False),
+            "discourse_type": llm_info.get("discourse_type", "factual"),
+            "discourse_label": llm_info.get("discourse_label", "Relato Factual"),
+            "semantic_comparison": llm_info.get("semantic_comparison") or {},
+            "lexical_analysis": llm_info.get("lexical_analysis") or {},
+            "uncertainty_warning": llm_info.get("uncertainty_warning", ""),
             "chunks_analyzed": cls.get("chunks_analyzed"),
             "chunks_total": cls.get("chunks_total"),
             "chunk_fake_probabilities": cls.get("chunk_fake_probabilities"),
@@ -123,6 +134,19 @@ class AnalysisResultSerializer(serializers.ModelSerializer):
             "aggregation": cls.get("aggregation"),
             "latency_ms": cls.get("latency_ms"),
             "device": cls.get("device"),
+        }
+
+    def get_expert(self, obj):
+        llm_info = (obj.technical or {}).get("llm_analysis", {})
+        if not llm_info:
+            return None
+        return {
+            "discourse_type": llm_info.get("discourse_type", "factual"),
+            "discourse_label": llm_info.get("discourse_label", "Relato Factual"),
+            "semantic_comparison": llm_info.get("semantic_comparison") or {},
+            "lexical_analysis": llm_info.get("lexical_analysis") or {},
+            "uncertainty_warning": llm_info.get("uncertainty_warning", ""),
+            "provider": llm_info.get("provider", ""),
         }
 
     def get_indicators(self, obj):

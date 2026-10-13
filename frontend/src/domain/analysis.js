@@ -210,6 +210,11 @@ function normalizeModel(raw) {
     aggregation: asString(m.aggregation) || null,
     tokensAnalyzed: asNumberOrNull(m.tokens_analyzed),
     tokensTotal: asNumberOrNull(m.tokens_total),
+    discourseType: asString(m.discourse_type) || null,
+    discourseLabel: asString(m.discourse_label) || null,
+    uncertaintyWarning: asString(m.uncertainty_warning) || null,
+    semanticComparison: isRecord(m.semantic_comparison) ? m.semantic_comparison : null,
+    lexicalAnalysis: isRecord(m.lexical_analysis) ? m.lexical_analysis : null,
   }
 }
 
@@ -312,6 +317,7 @@ export function normalizeAnalysis(raw) {
     recommendations: asStringArray(raw.recommendations),
     versions: normalizeVersions(raw.versions),
     durationMs: asNumberOrNull(raw.duration_ms),
+    expert: isRecord(raw.expert) ? raw.expert : null,
   }
 }
 

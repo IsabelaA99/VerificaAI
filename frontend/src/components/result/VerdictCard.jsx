@@ -50,58 +50,130 @@ export default function VerdictCard({ analysis }) {
           : 'O índice é um indicador de risco. Ele não é a probabilidade de a notícia ser falsa nem uma certeza.'}
       </p>
 
-      {model && model.fakeProbability !== null ? (
-        <div className="model-prob-card">
-          <div className="model-prob-card__header">
-            <div>
-              <p className="model-prob-card__eyebrow">Probabilidade calculada pelo modelo</p>
-              <p className="model-prob-card__headline">
-                {model.fakeProbability >= 0.5 ? (
-                  <>
-                    <strong>{formatPercent(model.fakeProbability)}</strong> de chance de ser <strong>falsa</strong>
-                  </>
-                ) : (
-                  <>
-                    <strong>{formatPercent(Math.max(0, 1 - model.fakeProbability))}</strong> de chance de ser <strong>verdadeira</strong>
-                  </>
-                )}
-              </p>
+      {model && model.fakeProbability !== null ? (() => {
+        const fakeRatio = model.fakeProbability
+        const trueRatio = Math.max(0, 1 - model.fakeProbability)
+        const fakePct = Math.round(fakeRatio * 100)
+        const truePct = Math.round(trueRatio * 100)
+        const isUncertainZone = truePct >= 35 && truePct <= 65
+        const isHighRisk = fakePct >= 65
+        const sem = model.semanticComparison || {}
+        const lex = model.lexicalAnalysis || {}
+        const hedging = lex.hedging_terms || []
+
+        return (
+          <div className="model-prob-card">
+            <div className="model-prob-card__header">
+              <div>
+                <div className="model-prob-card__eyebrow-row">
+                  <p className="model-prob-card__eyebrow">Probabilidade calculada pelo modelo</p>
+                  {model.discourseLabel ? (
+                    <span className="model-prob-card__discourse-pill">
+                      {model.discourseLabel}
+                    </span>
+                  ) : null}
+                </div>
+                <p className="model-prob-card__headline">
+                  {fakeRatio >= 0.5 ? (
+                    <>
+                      <strong>{formatPercent(fakeRatio)}</strong> de chance de ser <strong>falsa</strong>
+                    </>
+                  ) : (
+                    <>
+                      <strong>{formatPercent(trueRatio)}</strong> de chance de ser <strong>verdadeira</strong>
+                    </>
+                  )}
+                </p>
+              </div>
+              {model.confidence !== null ? (
+                <span className="model-prob-card__confidence">
+                  Confiança estatística: {formatPercent(model.confidence)}
+                </span>
+              ) : null}
             </div>
-            {model.confidence !== null ? (
-              <span className="model-prob-card__confidence">
-                Confiança estatística: {formatPercent(model.confidence)}
+
+            <div
+              className="model-prob-card__track"
+              role="progressbar"
+              aria-valuenow={fakePct}
+              aria-valuemin={0}
+              aria-valuemax={100}
+              aria-label="Probabilidade calculada pelo modelo de ser falsa"
+            >
+              <span
+                className="model-prob-card__fill model-prob-card__fill--true"
+                style={{ width: `${truePct}%` }}
+              />
+              <span
+                className="model-prob-card__fill model-prob-card__fill--fake"
+                style={{ width: `${fakePct}%` }}
+              />
+            </div>
+
+            <div className="model-prob-card__breakdown">
+              <span className="model-prob-card__label-true">
+                Chance de ser verdadeira: <strong>{formatPercent(trueRatio)}</strong>
               </span>
+              <span className="model-prob-card__label-fake">
+                Chance de ser falsa: <strong>{formatPercent(fakeRatio)}</strong>
+              </span>
+            </div>
+
+            {/* Alertas Expositivos de Margem e Risco */}
+            {isUncertainZone ? (
+              <div className="model-prob-card__alert model-prob-card__alert--warning">
+                <strong>Atenção à margem estatística ({formatPercent(trueRatio)}):</strong>
+                <span>
+                  {model.uncertaintyWarning ||
+                    'Uma probabilidade próxima a 50% reflete alta incerteza do classificador. É frequente em artigos de opinião, ensaios teóricos ou especulações com linguagem culta. Não considere esta porcentagem como atestado de veracidade.'}
+                </span>
+              </div>
+            ) : isHighRisk ? (
+              <div className="model-prob-card__alert model-prob-card__alert--danger">
+                <strong>Alerta de Alto Risco ({formatPercent(fakeRatio)} de falsidade):</strong>
+                <span>
+                  {model.uncertaintyWarning ||
+                    'O texto apresenta fortes sinais estilísticos de desinformação ou alegações enganosas. Verifique antes de repassar.'}
+                </span>
+              </div>
+            ) : model.uncertaintyWarning ? (
+              <div className="model-prob-card__alert model-prob-card__alert--info">
+                <strong>Nota do Especialista:</strong>
+                <span>{model.uncertaintyWarning}</span>
+              </div>
+            ) : null}
+
+            {/* Comparação Semântica e Consenso Histórico/Científico */}
+            {sem.consensus_summary ? (
+              <div className="model-prob-card__semantic">
+                <div className="model-prob-card__semantic-head">
+                  <span className="model-prob-card__semantic-title">Comparação Semântica & Consenso</span>
+                  {sem.consensus_status === 'diverge_consenso' ? (
+                    <span className="model-prob-card__badge model-prob-card__badge--divergent">Diverge do Consenso</span>
+                  ) : sem.consensus_status === 'conforme_consenso' ? (
+                    <span className="model-prob-card__badge model-prob-card__badge--compatible">Compatível com Consenso</span>
+                  ) : (
+                    <span className="model-prob-card__badge model-prob-card__badge--neutral">Debate Teórico / Sem Consenso</span>
+                  )}
+                </div>
+                <p className="model-prob-card__semantic-text">{sem.consensus_summary}</p>
+              </div>
+            ) : null}
+
+            {/* Marcadores Léxicos de Especulação (Hedging) */}
+            {hedging.length > 0 ? (
+              <div className="model-prob-card__hedging">
+                <span className="model-prob-card__hedging-label">Expressões de especulação (hedging) detectadas:</span>
+                <div className="model-prob-card__chips">
+                  {hedging.map((term) => (
+                    <span key={term} className="model-prob-card__chip">“{term}”</span>
+                  ))}
+                </div>
+              </div>
             ) : null}
           </div>
-
-          <div
-            className="model-prob-card__track"
-            role="progressbar"
-            aria-valuenow={Math.round(model.fakeProbability * 100)}
-            aria-valuemin={0}
-            aria-valuemax={100}
-            aria-label="Probabilidade calculada pelo modelo de ser falsa"
-          >
-            <span
-              className="model-prob-card__fill model-prob-card__fill--true"
-              style={{ width: `${Math.round(Math.max(0, 1 - model.fakeProbability) * 100)}%` }}
-            />
-            <span
-              className="model-prob-card__fill model-prob-card__fill--fake"
-              style={{ width: `${Math.round(model.fakeProbability * 100)}%` }}
-            />
-          </div>
-
-          <div className="model-prob-card__breakdown">
-            <span className="model-prob-card__label-true">
-              Chance de ser verdadeira: <strong>{formatPercent(Math.max(0, 1 - model.fakeProbability))}</strong>
-            </span>
-            <span className="model-prob-card__label-fake">
-              Chance de ser falsa: <strong>{formatPercent(model.fakeProbability)}</strong>
-            </span>
-          </div>
-        </div>
-      ) : null}
+        )
+      })() : null}
 
       {partial ? (
         <div className="verdict__partial">
