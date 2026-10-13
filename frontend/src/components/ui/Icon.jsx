@@ -122,15 +122,15 @@ const PATHS = {
 }
 
 /**
- * @param {{ name: keyof typeof PATHS, size?: number, className?: string }} props
+ * @param {{ name: keyof typeof PATHS, size?: number, className?: string, viewBox?: string }} props
  */
-export default function Icon({ name, size = 20, className = 'icon' }) {
+export default function Icon({ name, size = 20, className = 'icon', viewBox = '0 0 24 24' }) {
   return (
     <svg
       className={className}
       width={size}
       height={size}
-      viewBox="0 0 24 24"
+      viewBox={viewBox}
       fill="none"
       stroke="currentColor"
       strokeWidth="1.6"

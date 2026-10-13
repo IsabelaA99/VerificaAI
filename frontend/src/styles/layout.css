@@ -202,6 +202,28 @@
   color: var(--color-text);
 }
 
+/* Acesso ao WhatsApp permanece visível durante a navegação. */
+.whatsapp-link {
+  position: fixed;
+  right: calc(var(--space-6) + env(safe-area-inset-right));
+  bottom: calc(var(--space-6) + env(safe-area-inset-bottom));
+  z-index: var(--z-floating);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: var(--whatsapp-link-size);
+  height: var(--whatsapp-link-size);
+  border-radius: var(--radius-round);
+  background: var(--color-whatsapp);
+  color: var(--color-on-whatsapp);
+  box-shadow: var(--shadow-toast);
+  transition: background var(--duration-fast) var(--ease-out);
+}
+
+.whatsapp-link:hover {
+  background: var(--color-whatsapp-hover);
+}
+
 /* ---- Cabeçalho de página ------------------------------------------------ */
 
 .screen {
@@ -325,6 +347,11 @@
 }
 
 @media (max-width: 32.5em) {
+  .whatsapp-link {
+    right: calc(var(--space-4) + env(safe-area-inset-right));
+    bottom: calc(var(--space-4) + env(safe-area-inset-bottom));
+  }
+
   .brand__mark {
     width: 2.75rem;
   }

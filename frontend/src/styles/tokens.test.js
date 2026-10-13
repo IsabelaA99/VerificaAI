@@ -119,6 +119,8 @@ describe('contraste de texto (WCAG 1.4.3, mínimo 4,5:1)', () => {
     ['color-on-accent', 'color-accent-hover'],
     ['color-on-danger', 'color-danger'],
     ['color-on-danger', 'color-danger-hover'],
+    ['color-on-whatsapp', 'color-whatsapp'],
+    ['color-on-whatsapp', 'color-whatsapp-hover'],
   ])('%s sobre %s (botões, em repouso e ao passar o mouse)', (foreground, background) => {
     expect(contrast(foreground, background)).toBeGreaterThanOrEqual(TEXT_MIN)
   })

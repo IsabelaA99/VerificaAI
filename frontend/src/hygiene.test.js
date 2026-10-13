@@ -7,7 +7,7 @@ import { describe, expect, it } from 'vitest'
 //   - nada que injete HTML ou execute texto como código;
 //   - armazenamento do navegador e rede passam por um único módulo cada, para o que a página
 //     de Privacidade descreve ser, de fato, tudo o que acontece;
-//   - nenhum segredo, nenhum serviço de terceiros e nenhum nome antigo do produto;
+//   - nenhum segredo; só o link externo do WhatsApp é permitido; nenhum nome antigo do produto;
 //   - o HTML de entrada permite zoom, não tem script embutido e declara o idioma.
 // São verificações de texto sobre os arquivos, rápidas e sem navegador. O que depende de ver a
 // página funcionando (contraste, alvos de toque, teclado) está nos outros testes e na auditoria
@@ -122,8 +122,8 @@ describe('armazenamento e rede passam por um só módulo', () => {
     expect(offenders(/\bconsole\./)).toEqual([])
   })
 
-  it('só os endereços de exemplo do formulário aparecem como http(s)://, sem serviços de terceiros', () => {
-    const allowed = new Set(['http://', 'https://', 'https://exemplo.com/noticia'])
+  it('só os endereços de exemplo e o link do WhatsApp aparecem como http(s)://', () => {
+    const allowed = new Set(['http://', 'https://', 'https://exemplo.com/noticia', 'https://wa.me/5511999999999'])
     const found = []
     for (const file of FILES) {
       for (const { text, number } of codeLines(file.source)) {

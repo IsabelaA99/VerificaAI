@@ -45,6 +45,7 @@
   --slate-600: #566574;
 
   --green-700: #17644c;
+  --green-800: #11513d;
   --green-100: #e9f3ee;
   --green-200: #cfe8dc;
 
@@ -139,6 +140,7 @@
   --ease-out: cubic-bezier(0.22, 1, 0.36, 1);
 
   --z-header: 10;
+  --z-floating: 20;
   --z-dialog: 100;
   --z-toast: 150;
 
@@ -180,6 +182,9 @@
   --color-danger: var(--red-700);
   --color-danger-hover: var(--red-800);
   --color-on-danger: var(--white);
+  --color-whatsapp: var(--green-700);
+  --color-whatsapp-hover: var(--green-800);
+  --color-on-whatsapp: var(--white);
 
   /* Anel de foco em duas camadas: a de dentro (dourada) se vê sobre fundos escuros e a de
      fora (azul-marinho) sobre fundos claros; juntas passam de 3:1 sobre qualquer fundo do
@@ -228,6 +233,7 @@
      ------------------------------------------------------------------------ */
   /* RNF08: controles principais com área mínima de 48 × 48 px CSS. */
   --target-min: 3rem;
+  --whatsapp-link-size: 3.5rem;
   --icon-size: 1.25rem;
 
   --wrap-max: 77rem;

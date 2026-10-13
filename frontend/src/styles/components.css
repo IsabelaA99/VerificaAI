@@ -575,6 +575,12 @@
   pointer-events: none;
 }
 
+@media (max-width: 48.75em) {
+  .toast-region {
+    bottom: calc(var(--space-6) + var(--whatsapp-link-size) + var(--space-4) + env(safe-area-inset-bottom));
+  }
+}
+
 .toast-stack {
   display: flex;
   flex-direction: column;
