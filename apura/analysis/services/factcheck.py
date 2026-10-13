@@ -111,76 +111,231 @@ def _search_google_fact_check(query: str, api_key: str) -> list[dict[str, Any]]:
         return []
 
 
-def _search_fact_check_fallback(query: str) -> list[dict[str, Any]]:
-    """
-    Fallback: Busca em checagens públicas brasileiras e internacionais de fact-checking.
-    Utiliza endpoint lite para evitar desafios de tela cheia/bloqueio.
-    """
-    search_term = f"{query} checagem fato fake"
-    url = "https://lite.duckduckgo.com/lite/"
+_STOPWORDS_QUERY = {
+    "de", "do", "da", "dos", "das", "em", "no", "na", "nos", "nas", "para", "por",
+    "com", "que", "se", "nao", "não", "uma", "um", "este", "esta", "esse", "essa",
+    "isso", "isto", "como", "pelo", "pela", "pelos", "pelas", "ontem", "hoje", "amanha", "amanhã", "sobre",
+    "segundo", "afirma", "diz", "anuncia", "anunciou", "revela", "mostra"
+}
+
+
+def _check_overlap(query: str, text: str) -> int:
+    """Calcula quantos radicais significativos da busca aparecem no texto."""
+    q_stems = {w[:4].lower() for w in query.lower().split() if len(w) >= 3 and w.lower() not in _STOPWORDS_QUERY}
+    t_stems = {w[:4].lower() for w in text.lower().split() if len(w) >= 3 and w.lower() not in _STOPWORDS_QUERY}
+    return len(q_stems.intersection(t_stems))
+
+
+def _clean_html_snippet(text: str) -> str:
+    """Remove tags HTML e normaliza espaços."""
+    if not text:
+        return ""
+    clean = re.sub(r"<[^>]+>", " ", text)
+    clean = re.sub(r"\s+", " ", clean)
+    return clean.strip()
+
+
+def _search_comprova(query: str, max_results: int = 2) -> list[dict[str, Any]]:
+    """Consulta o Projeto Comprova (consórcio de 28 redações jornalísticas no Brasil)."""
+    url = f"https://projetocomprova.com.br/?s={urllib.parse.quote(query)}"
     headers = {
-        "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/133.0.0.0 Safari/537.36",
+        "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
     }
     try:
-        resp = requests.post(url, data={"q": search_term}, headers=headers, timeout=6)
+        resp = requests.get(url, headers=headers, timeout=5)
         if resp.status_code != 200:
             return []
-
         soup = BeautifulSoup(resp.text, "html.parser")
-        results: list[dict[str, Any]] = []
+        items: list[dict[str, Any]] = []
+        for art in soup.select("article"):
+            link_el = art.select_one("h2 a, .post-title a")
+            desc_el = art.select_one("p, .entry-content, .post-excerpt")
+            if not link_el or not link_el.get("href"):
+                continue
+            title = _clean_html_snippet(link_el.get_text(strip=True))
+            href = link_el.get("href") or ""
+            snippet = _clean_html_snippet(desc_el.get_text(strip=True) if desc_el else "")
 
-        rows = soup.select("table tr")
-        for row in rows:
-            link_el = row.select_one("a.result-link")
-            if not link_el:
+            overlap = _check_overlap(query, f"{title} {snippet}")
+            if overlap == 0:
                 continue
 
-            title = link_el.get_text(strip=True)
-            raw_link = link_el.get("href") or ""
-            snippet_tr = row.find_next_sibling("tr")
-            snippet = (
-                snippet_tr.select_one("td.result-snippet").get_text(strip=True)
-                if snippet_tr and snippet_tr.select_one("td.result-snippet")
-                else ""
-            )
+            combined = f"{title} {snippet}".lower()
+            is_debunk = any(w in combined for w in ("falso", "falsa", "fake", "enganoso", "enganosa", "distorce", "desmente", "desment", "golpe", "sem provas", "boato"))
+            is_valid = any(w in combined for w in ("verdadeiro", "verdadeira", "é fato", "é verdade", "comprovado", "real"))
 
-            # Identifica se é veículo de checagem conhecido
-            publisher = "Agência de Notícias / Checagem"
-            for domain, name in KNOWN_PUBLISHERS.items():
-                if domain in raw_link.lower() or domain in title.lower():
-                    publisher = name
-                    break
-
-            # Determina a relação a partir do título e snippet
-            combined_text = f"{title} {snippet}".lower()
-            if any(w in combined_text for w in ("é falso", "é fake", "não é verdade", "boato", "engana", "distorce", "desment", "es falso", "desmente", "falso")):
+            if is_debunk and overlap >= 2:
                 relation = "conflicting"
-                reason = "A apuração de fact-checking indica que a alegação é falsa ou enganosa."
-            elif any(w in combined_text for w in ("é fato", "é verdade", "verdadeiro", "confirma", "es verdad")):
+                reason = "Publicação do Projeto Comprova aponta alegação falsa ou desmentida."
+            elif is_valid and overlap >= 2:
                 relation = "compatible"
-                reason = "A apuração indica que os fatos relatados são verídicos."
+                reason = "Publicação do Projeto Comprova confirma a veracidade factual."
             else:
                 relation = "contextual"
-                reason = "Publicação de checagem com contextualização sobre o tema."
+                reason = "Investigação jornalística do Projeto Comprova trazendo apuração de contexto."
 
-            results.append({
-                "id": f"src-{len(results) + 1}",
+            items.append({
+                "id": f"comprova-{len(items) + 1}",
                 "relation": relation,
-                "publisher": publisher,
+                "publisher": "Projeto Comprova",
                 "title": title,
-                "excerpt": snippet,
+                "excerpt": snippet[:280],
                 "published_at": None,
-                "url": raw_link,
+                "url": href,
                 "relation_reason": reason,
             })
+            if len(items) >= max_results:
+                break
+        return items
+    except Exception:
+        logger.warning("Falha ao buscar checagem no Projeto Comprova")
+        return []
 
+
+def _search_boatos(query: str, max_results: int = 2) -> list[dict[str, Any]]:
+    """Consulta o Boatos.org (agência independente brasileira de desmentidos)."""
+    url = f"https://www.boatos.org/?s={urllib.parse.quote(query)}"
+    headers = {
+        "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+    }
+    try:
+        resp = requests.get(url, headers=headers, timeout=5)
+        if resp.status_code != 200:
+            return []
+        soup = BeautifulSoup(resp.text, "html.parser")
+        items: list[dict[str, Any]] = []
+        for art in soup.select("article"):
+            link_el = art.select_one("h2 a")
+            desc_el = art.select_one(".entry-summary p, .entry-content p, p")
+            if not link_el or not link_el.get("href"):
+                continue
+            title = _clean_html_snippet(link_el.get_text(strip=True))
+            href = link_el.get("href") or ""
+            snippet = _clean_html_snippet(desc_el.get_text(strip=True) if desc_el else "")
+
+            overlap = _check_overlap(query, f"{title} {snippet}")
+            if overlap == 0:
+                continue
+
+            combined = f"{title} {snippet}".lower()
+            is_debunk = any(w in combined for w in ("#boato", "boato", "falso", "falsa", "fake", "mentira", "golpe", "desmente", "desmentido", "distorcido"))
+            is_valid = any(w in combined for w in ("fato", "verdade", "real"))
+
+            if is_debunk and overlap >= 2:
+                relation = "conflicting"
+                reason = "Checagem do Boatos.org aponta que a narrativa é boato ou desinformação."
+            elif is_valid and overlap >= 2:
+                relation = "compatible"
+                reason = "Checagem confirma a ocorrência do fato."
+            else:
+                relation = "contextual"
+                reason = "Artigo de checagem do Boatos.org contextualizando o boato."
+
+            items.append({
+                "id": f"boatos-{len(items) + 1}",
+                "relation": relation,
+                "publisher": "Boatos.org",
+                "title": title,
+                "excerpt": snippet[:280],
+                "published_at": None,
+                "url": href,
+                "relation_reason": reason,
+            })
+            if len(items) >= max_results:
+                break
+        return items
+    except Exception:
+        logger.warning("Falha ao buscar checagem no Boatos.org")
+        return []
+
+
+def _search_wikipedia(query: str, max_results: int = 2) -> list[dict[str, Any]]:
+    """Consulta a Wikipédia em português para consenso histórico, científico e enciclopédico."""
+    url = "https://pt.wikipedia.org/w/api.php"
+    params = {
+        "action": "query",
+        "list": "search",
+        "srsearch": query,
+        "format": "json",
+        "utf8": 1,
+        "srlimit": max_results,
+    }
+    headers = {"User-Agent": "VerificAI/1.0 (contato: marlon.marques.mmd@gmail.com)"}
+    try:
+        resp = requests.get(url, params=params, headers=headers, timeout=5)
+        if resp.status_code != 200:
+            return []
+        items_data = resp.json().get("query", {}).get("search", [])
+        results: list[dict[str, Any]] = []
+        query_words = [w for w in query.lower().split() if len(w) > 3]
+
+        for i, it in enumerate(items_data):
+            title = it.get("title", "")
+            snippet = _clean_html_snippet(it.get("snippet", ""))
+            combined = f"{title} {snippet}".lower()
+
+            # Evita artigos genéricos desconectados da alegação
+            if query_words:
+                overlap = sum(1 for w in query_words if w in combined)
+                if overlap < 2 and len(query_words) > 1:
+                    continue
+
+            if any(w in combined for w in ("teoria da conspiração", "teorias da conspiração", "pseudociência", "fraude", "boato", "desmentido")):
+                relation = "conflicting"
+                reason = "Registro enciclopédico oficial documenta o tema como teoria da conspiração ou pseudociência."
+            else:
+                relation = "contextual"
+                reason = "Contexto enciclopédico e histórico de referência (Wikipédia)."
+
+            clean_title = title.replace(" ", "_")
+            results.append({
+                "id": f"wiki-{len(results) + 1}",
+                "relation": relation,
+                "publisher": "Wikipédia (Consenso Enciclopédico)",
+                "title": title,
+                "excerpt": snippet[:280],
+                "published_at": None,
+                "url": f"https://pt.wikipedia.org/wiki/{urllib.parse.quote(clean_title)}",
+                "relation_reason": reason,
+            })
+        return results
+    except Exception:
+        logger.warning("Falha ao buscar contexto na Wikipédia")
+        return []
+
+
+def _search_fact_check_fallback(query: str) -> list[dict[str, Any]]:
+    """
+    Fallback integrado de checagem pública:
+    1. Projeto Comprova (consórcio das maiores redações brasileiras)
+    2. Boatos.org (desmentidos independentes)
+    3. Wikipédia (registro histórico e científico de teorias e consensos)
+    """
+    results: list[dict[str, Any]] = []
+    seen_urls: set[str] = set()
+
+    # Busca em checagens jornalísticas especializadas
+    for source in _search_comprova(query) + _search_boatos(query):
+        url = source.get("url", "")
+        if url and url not in seen_urls:
+            seen_urls.add(url)
+            results.append(source)
+
+    # Se não encontrou apuração em agências, ou se restou espaço, consulta o consenso enciclopédico
+    if len(results) < 3:
+        for wiki_item in _search_wikipedia(query):
+            url = wiki_item.get("url", "")
+            if url and url not in seen_urls:
+                seen_urls.add(url)
+                results.append(wiki_item)
             if len(results) >= 4:
                 break
 
-        return results
-    except Exception:
-        logger.exception("Falha no fallback de checagem de fatos")
-        return []
+    # Reindexa os IDs sequencialmente
+    for idx, item in enumerate(results, 1):
+        item["id"] = f"src-{idx}"
+
+    return results[:4]
 
 
 def search_fact_checks(claim_or_title: str) -> dict[str, Any]:

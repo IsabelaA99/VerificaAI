@@ -40,14 +40,20 @@ class AnalysisApiTests(TestCase):
     def setUp(self):
         self.groq_patch = patch("analysis.services.llm._call_groq", return_value=None)
         self.gemini_patch = patch("analysis.services.llm._call_gemini", return_value=None)
+        self.fact_patch = patch(
+            "analysis.services.pipeline.factcheck.search_fact_checks",
+            return_value={"status": "none", "enabled": True, "sources": [], "conflict_score": None},
+        )
         self.groq_patch.start()
         self.gemini_patch.start()
+        self.fact_patch.start()
         self.client = APIClient()
         self.url = reverse("api-v1:analysis-create")
 
     def tearDown(self):
         self.groq_patch.stop()
         self.gemini_patch.stop()
+        self.fact_patch.stop()
         classifier_service.set_classifier(None)
 
     def _post(self, payload):
