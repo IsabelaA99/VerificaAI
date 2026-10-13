@@ -11,7 +11,7 @@ describe('createConfig', () => {
       urlInput: true,
       accountsMode: 'demo',
       feedbackMode: 'demo',
-      backend: { urlAnalysis: false, sources: false },
+      backend: { urlAnalysis: true, sources: true },
     })
   })
 
@@ -71,10 +71,10 @@ describe('createConfig', () => {
   })
 
   describe('o que o back end já faz (só muda textos explicativos, RF30)', () => {
-    it('começam desligados e só "true" liga', () => {
-      expect(createConfig({}).backend).toEqual({ urlAnalysis: false, sources: false })
-      expect(createConfig({ VITE_BACKEND_URL_ANALYSIS: 'true' }).backend).toEqual({ urlAnalysis: true, sources: false })
-      expect(createConfig({ VITE_BACKEND_SOURCES: 'true' }).backend).toEqual({ urlAnalysis: false, sources: true })
+    it('acompanham a API atual por padrão; "false" serve a um back end anterior', () => {
+      expect(createConfig({}).backend).toEqual({ urlAnalysis: true, sources: true })
+      expect(createConfig({ VITE_BACKEND_URL_ANALYSIS: 'false' }).backend).toEqual({ urlAnalysis: false, sources: true })
+      expect(createConfig({ VITE_BACKEND_SOURCES: 'false' }).backend).toEqual({ urlAnalysis: true, sources: false })
       expect(createConfig({ VITE_BACKEND_SOURCES: 'sim' }).backend.sources).toBe(false)
     })
   })

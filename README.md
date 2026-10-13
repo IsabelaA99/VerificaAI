@@ -1,6 +1,6 @@
 # verificAI — Fake Eyes / Apura
 
-Sistema completo de apoio à avaliação de notícias e alegações em língua portuguesa, integrando backend **Django + Django REST Framework**, modelo de NLP **BERTimbau V4 (com fatiamento determinístico e tokens de separação `[SEP]`)** e frontend moderno **ApuraWeb (React 19 + Vite 8)**.
+Sistema de apoio à avaliação de notícias e alegações em língua portuguesa, integrando backend **Django + Django REST Framework**, modelo de NLP **BERTimbau V4 (com fatiamento determinístico e tokens de separação `[SEP]`)** e frontend **ApuraWeb (React 19 + Vite 8)**.
 
 Plano de entrega por etapas da especificação: [TASKS.md](TASKS.md).
 
@@ -87,9 +87,12 @@ Quando a probabilidade é incerta ou o texto gera sinais contraditórios entre s
 
 ### 3. Índice de Risco (0 a 100)
 
-Quando conclusivo, o índice pondera:
-* **70%**: Probabilidade de falsidade do BERTimbau.
-* **30%**: Indicadores linguísticos heurísticos (palavras em caixa alta, pontuação excessiva, termos sensacionalistas).
+Quando conclusivo, o índice usa os pesos de `rules_v1.json`:
+* **60%**: pontuação de falsidade do BERTimbau.
+* **15%**: indicadores linguísticos heurísticos (palavras em caixa alta, pontuação excessiva, termos sensacionalistas).
+* **25%**: conflito com checagens externas, quando esse sinal está disponível.
+
+Sinais ausentes são excluídos e os pesos restantes são normalizados. Sem checagens classificadas como compatíveis ou conflitantes, o índice usa **80%** do modelo e **20%** dos indicadores linguísticos. Esses pesos e limiares são provisórios até a calibração e a validação das fontes.
 
 Faixas de risco sem sobreposição:
 * **0 a 25:** *Poucos sinais de risco*
@@ -201,16 +204,16 @@ Entrada (Texto ou Link)
 ### 1. Raspagem de Notícias por URL (Bypass de Popups e Modais)
 * Utiliza a biblioteca **Trafilatura** configurada com cabeçalhos realistas de navegador desktop para extrair o miolo da notícia, descartando automaticamente popups de consentimento de cookies, modais publicitários, cabeçalhos de navegação e rodapés.
 * Fallback integrado com **BeautifulSoup** para inspeção de metadados OpenGraph (`og:title`, `og:description`) e estrutura `<article>`.
-* **Proteção Estrita contra SSRF (RNF09):** Bloqueio de IPs locais, redes privadas (10.0.0.0/8, 192.168.0.0/16, 172.16.0.0/12), loopback, link-local e metadados de nuvem (169.254.169.254).
+* **Validação inicial contra SSRF (RNF09):** Bloqueia endereços locais, privados e reservados na resolução inicial. O cliente HTTP segue redirecionamentos antes de validar o destino final; essa proteção precisa ser concluída antes de expor o serviço a entradas não confiáveis.
 
 ### 2. Integração com Google Fact Check Tools & Agências
 * Consulta a API oficial do Google Fact Check (`factchecktools.googleapis.com`) em busca de análises prévias registradas via *ClaimReview*.
-* Fallback automático para veículos de checagem brasileiros (*G1 Fato ou Fake*, *Aos Fatos*, *Agência Lupa*, *Boatos.org*, *E-farsas*, *UOL Confere*).
-* Classifica a relação de cada fonte encontrada como **Conflitante** (*conflicting*), **Compatível** (*compatible*) ou **Contextual** (*contextual*).
+* Se a API não trouxer resultados, faz uma busca pública na internet e identifica veículos de checagem conhecidos entre os resultados; a busca não se limita a esses veículos.
+* Classifica cada resultado como **Conflitante** (*conflicting*), **Compatível** (*compatible*) ou **Contextual** (*contextual*) por palavras do veredito ou do título/resumo. A relação com a alegação não é confirmada em profundidade; confira o link original.
 
 ### 3. Síntese Explicativa via LLM ("Por isso e por isso")
 * Cruza a avaliação probabilística da IA com os achados de checagem na internet e os gatilhos de linguagem.
-* Suporta **Google Gemini** (`gemini-2.0-flash`), **OpenAI** (`gpt-4o-mini`) ou **Groq** via chaves de API no `.env`.
+* Tenta **Google Gemini** (`gemini-2.0-flash`) ou **OpenAI** (`gpt-4o-mini`) quando as respectivas chaves de API estão configuradas. O código lê `GROQ_API_KEY`, mas não implementa uma chamada ao Groq.
 * **Fallback Analítico Inteligente:** Caso nenhuma chave esteja configurada ou o serviço externo esteja indisponível, um motor analítico jornalístico determinístico gera a síntese estruturada sem quebrar a experiência do usuário.
 
 ---
@@ -286,8 +289,9 @@ Entrada (Texto ou Link)
     "value": 88.5,
     "formula": "100 * sum(w_i * s_i) / sum(w_i)",
     "weights": {
-      "model_fake_probability": 0.7,
-      "linguistic_indicators": 0.3
+      "model_fake_probability": 0.6,
+      "linguistic_indicators": 0.15,
+      "evidence_conflict": 0.25
     }
   },
   "limitations": [
@@ -317,6 +321,6 @@ RUN_MODEL_TESTS=1 ../.venv/bin/python manage.py test analysis  # Testes com infe
 ### Front end (React / Vitest)
 ```bash
 cd frontend
-npm test               # Executa os 808 testes automatizados
+npm test               # Executa os testes automatizados
 npm run check          # Lint + typecheck + testes + build de produção
 ```

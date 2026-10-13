@@ -41,12 +41,11 @@ export function createConfig(env = import.meta.env) {
     urlInput: toBool(env.VITE_FEATURE_URL_INPUT, true),
     accountsMode: toMode(env.VITE_ACCOUNTS_MODE),
     feedbackMode: toMode(env.VITE_FEEDBACK_MODE),
-    // O que o back end já faz hoje. Só muda textos explicativos (Como funciona e Privacidade),
-    // para que eles continuem descrevendo o que o sistema realmente faz (RF30). Ligue quando a
-    // Etapa 2 (análise por link) e a Etapa 3 (consulta a fontes) forem publicadas.
+    // A API v1 já analisa links e consulta fontes. Estas opções só ajustam os textos
+    // explicativos para uma implantação cujo back end ainda não ofereça esses recursos.
     backend: {
-      urlAnalysis: toBool(env.VITE_BACKEND_URL_ANALYSIS, false),
-      sources: toBool(env.VITE_BACKEND_SOURCES, false),
+      urlAnalysis: toBool(env.VITE_BACKEND_URL_ANALYSIS, true),
+      sources: toBool(env.VITE_BACKEND_SOURCES, true),
     },
   })
 }

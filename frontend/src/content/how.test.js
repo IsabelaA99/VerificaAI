@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest'
+import { createConfig } from '../config.js'
 import { formatNumber } from '../domain/format.js'
 import { TEXT_LIMITS, VISITOR_LIMIT } from '../domain/limits.js'
 import { RISK_BANDS, STATUS_CODES } from '../domain/status.js'
@@ -8,7 +9,7 @@ import { BAND_RANGES, howFaq, howSections, howSteps } from './how.js'
 // humana, sem prometer o que não existe e sem apresentar o índice como probabilidade.
 
 const BACKENDS = [
-  ['hoje (sem link e sem fontes)', { urlAnalysis: false, sources: false }],
+  ['API anterior (sem link e sem fontes)', { urlAnalysis: false, sources: false }],
   ['com análise por link', { urlAnalysis: true, sources: false }],
   ['com fontes', { urlAnalysis: false, sources: true }],
   ['completo', { urlAnalysis: true, sources: true }],
@@ -50,7 +51,7 @@ describe('estrutura', () => {
     expect(steps.map((s) => s.title)).toEqual([
       'Você envia o conteúdo',
       'O sistema procura sinais',
-      'As evidências são comparadas',
+      'As fontes são consultadas',
       'Você recebe uma explicação',
     ])
   })
@@ -80,7 +81,7 @@ describe('RF16: o índice e as faixas', () => {
 })
 
 describe('RF30: o que o texto afirma depende do que o back end faz', () => {
-  it('hoje: diz que o envio por link e a consulta a fontes ainda não existem', () => {
+  it('com uma API anterior: descreve os recursos ausentes', () => {
     const text = allText(BACKENDS[0][1])
     expect(text).toMatch(/O envio por link ainda não está disponível/)
     expect(text).toMatch(/consulta a fontes externas ainda não está habilitada/)
@@ -96,15 +97,17 @@ describe('RF30: o que o texto afirma depende do que o back end faz', () => {
 
   it('com as fontes no ar: descreve a consulta e deixa de dizer que ela não existe', () => {
     const text = allText({ urlAnalysis: false, sources: true })
-    expect(text).toMatch(/procura fontes relacionadas à alegação/)
+    expect(text).toMatch(/busca checagens relacionadas à alegação/)
     expect(text).not.toMatch(/ainda não consulta fontes externas/)
     expect(text).not.toMatch(/consulta a fontes externas ainda não está habilitada/)
   })
 
-  it('sempre descreve as quatro relações possíveis de uma fonte (RF08)', () => {
-    for (const [, backend] of BACKENDS) {
-      expect(allText(backend)).toMatch(/compatível, conflitante, contextual ou insuficiente/)
-    }
+  it('o padrão atual descreve link e fontes sem prometer validação da relação com a alegação', () => {
+    const text = allText(createConfig({}).backend)
+    expect(text).toMatch(/Você também pode enviar o endereço \(link\) da notícia/)
+    expect(text).toMatch(/tenta uma busca pública na internet/)
+    expect(text).toMatch(/uma fonte sem relação direta pode aparecer e influenciar o índice/)
+    expect(text).not.toMatch(/ainda não consulta fontes externas|envio por link ainda não está disponível/)
   })
 })
 
@@ -185,9 +188,9 @@ describe('perguntas frequentes', () => {
     expect(find('off')).toMatch(/esperar a renovação/)
   })
 
-  it('a resposta sobre o texto enviado combina com a página de Privacidade (não é guardado)', () => {
+  it('a resposta sobre o texto enviado distingue o conteúdo integral dos dados derivados', () => {
     const answer = howFaq({ accountsMode: 'demo' }).find((item) => item.question === 'O Apura guarda o texto que eu enviei?').answer
-    expect(answer).toMatch(/^Não\./)
+    expect(answer).toMatch(/^Não como texto integral/)
     expect(answer).toMatch(/resumo curto da alegação/)
   })
 })

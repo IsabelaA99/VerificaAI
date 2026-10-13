@@ -8,10 +8,10 @@ import { privacySections } from './privacy.js'
 // finalidade, janela de 24 horas e limitações).
 
 const CONFIGS = {
-  'demonstração (padrão de hoje)': { accountsMode: 'demo', feedbackMode: 'demo', backend: { urlAnalysis: false, sources: false } },
-  'contas e avaliação desligadas': { accountsMode: 'off', feedbackMode: 'off', backend: { urlAnalysis: false, sources: false } },
-  'só contas desligadas': { accountsMode: 'off', feedbackMode: 'demo', backend: { urlAnalysis: false, sources: false } },
-  'back end completo': { accountsMode: 'demo', feedbackMode: 'demo', backend: { urlAnalysis: true, sources: true } },
+  'demonstração (padrão de hoje)': { accountsMode: 'demo', feedbackMode: 'demo', backend: { urlAnalysis: true, sources: true } },
+  'contas e avaliação desligadas': { accountsMode: 'off', feedbackMode: 'off', backend: { urlAnalysis: true, sources: true } },
+  'só contas desligadas': { accountsMode: 'off', feedbackMode: 'demo', backend: { urlAnalysis: true, sources: true } },
+  'back end anterior': { accountsMode: 'demo', feedbackMode: 'demo', backend: { urlAnalysis: false, sources: false } },
   'modos reais (Etapa 4)': { accountsMode: 'real', feedbackMode: 'real', backend: { urlAnalysis: true, sources: true } },
 }
 
@@ -111,16 +111,17 @@ describe('RF05 e RF30: o conteúdo enviado', () => {
     expect(allText(config)).not.toMatch(/\b\d+ (dias|meses|anos)\b/)
   })
 
-  it('hoje, diz que o texto não vai a outros serviços; com fontes habilitadas, deixa de dizer isso', () => {
-    expect(textOf(byId(CONFIGS['demonstração (padrão de hoje)'], 'conteudo'))).toMatch(/Ele não é enviado a outros serviços/)
-    const full = textOf(byId(CONFIGS['back end completo'], 'conteudo'))
-    expect(full).not.toMatch(/não é enviado a outros serviços/)
-    expect(full).toMatch(/pode ser enviada a serviços de busca/)
+  it('hoje, descreve busca e possível síntese externa; com API anterior, não afirma esses envios', () => {
+    const current = textOf(byId(CONFIGS['demonstração (padrão de hoje)'], 'conteudo'))
+    expect(current).toMatch(/envia palavras do título ou da alegação a serviços de busca/)
+    expect(current).toMatch(/até 1\.200 caracteres do corpo/)
+    expect(current).toMatch(/campos derivados podem repetir trechos/)
+    expect(textOf(byId(CONFIGS['back end anterior'], 'conteudo'))).toMatch(/Ele não é enviado a outros serviços/)
   })
 
-  it('hoje, explica o que acontece se alguém enviar um link; com o link no ar, não fala disso', () => {
-    expect(textOf(byId(CONFIGS['demonstração (padrão de hoje)'], 'conteudo'))).toMatch(/A análise por link ainda não está disponível/)
-    expect(textOf(byId(CONFIGS['back end completo'], 'conteudo'))).not.toMatch(/análise por link ainda não está disponível/)
+  it('hoje não descreve link como indisponível; com API anterior, explica a limitação', () => {
+    expect(textOf(byId(CONFIGS['demonstração (padrão de hoje)'], 'conteudo'))).not.toMatch(/análise por link ainda não está disponível/)
+    expect(textOf(byId(CONFIGS['back end anterior'], 'conteudo'))).toMatch(/A análise por link ainda não está disponível/)
   })
 })
 
