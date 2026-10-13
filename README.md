@@ -204,7 +204,7 @@ Entrada (Texto ou Link)
 ### 1. Raspagem de Notícias por URL (Bypass de Popups e Modais)
 * Utiliza a biblioteca **Trafilatura** configurada com cabeçalhos realistas de navegador desktop para extrair o miolo da notícia, descartando automaticamente popups de consentimento de cookies, modais publicitários, cabeçalhos de navegação e rodapés.
 * Fallback integrado com **BeautifulSoup** para inspeção de metadados OpenGraph (`og:title`, `og:description`) e estrutura `<article>`.
-* **Validação inicial contra SSRF (RNF09):** Bloqueia endereços locais, privados e reservados na resolução inicial. O cliente HTTP segue redirecionamentos antes de validar o destino final; essa proteção precisa ser concluída antes de expor o serviço a entradas não confiáveis.
+* **Proteção contra SSRF (RNF09):** Valida todos os IPs resolvidos e cada redirecionamento antes de conectar. A conexão usa o IP público aprovado, preservando o nome do site nos cabeçalhos, no TLS e na verificação do certificado. A cadeia de redirecionamentos é limitada a cinco saltos.
 
 ### 2. Integração com Google Fact Check Tools & Agências
 * Consulta a API oficial do Google Fact Check (`factchecktools.googleapis.com`) em busca de análises prévias registradas via *ClaimReview*.

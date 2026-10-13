@@ -53,8 +53,8 @@ regras de risco, abstenção e rastreabilidade de versões.
 ## Etapa 2 — Entrada por URL e segurança
 - [x] Extração estruturada: título, subtítulo, corpo, autoria, data, domínio com Trafilatura e BeautifulSoup (RF02)
 - [x] Tratamento de falhas: rede, HTTP, paywall, antirrobô, popups de consentimento, não textual (RF03)
-- [/] Proteção SSRF: bloqueio inicial de IPs privados/loopback/link-local/metadados; falta validar cada redirecionamento antes da conexão e vincular o endereço validado à conexão (RNF09)
-- [/] Testes de segurança SSRF e extração com mocks; ampliar para redirecionamento a destino interno e mudança de DNS
+- [x] Proteção SSRF: validação de todos os IPs resolvidos e de cada redirecionamento antes da conexão; conexão vinculada ao IP público validado (RNF09)
+- [x] Testes de segurança SSRF e extração com mocks, incluindo redirecionamento a destino interno e mudança de DNS
 
 ## Etapa 3 — Alegação, evidências e síntese LLM
 - [x] Identificação e resumo da alegação principal (RF06, RF20)

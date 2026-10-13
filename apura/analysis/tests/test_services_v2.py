@@ -12,6 +12,23 @@ from analysis.services.scraper import ScrapedArticle, scrape_url, validate_url_s
 
 
 class ScraperTests(SimpleTestCase):
+    @staticmethod
+    def dns_result(ip):
+        return [(2, 1, 6, "", (ip, 443))]
+
+    @staticmethod
+    def html_response():
+        response = MagicMock()
+        response.status = 200
+        response.headers = {"Content-Type": "text/html; charset=utf-8"}
+        response.data = b"""
+        <html><head><title>Titulo da Materia</title></head><body><article>
+        <p>O governo anunciou hoje medidas para o desenvolvimento economico do pais durante uma cerimonia oficial.</p>
+        <p>As novas diretrizes entram em vigor no proximo mes e beneficiam pequenos empreendedores.</p>
+        </article></body></html>
+        """
+        return response
+
     def test_ssrf_safety_blocks_private_ip(self):
         with self.assertRaises(InputValidationError) as ctx:
             validate_url_safety("http://127.0.0.1:8000/teste")
@@ -27,35 +44,72 @@ class ScraperTests(SimpleTestCase):
             validate_url_safety("file:///etc/passwd")
         self.assertEqual(ctx.exception.code, "invalid_url_scheme")
 
-    @patch("analysis.services.scraper.requests.get")
-    def test_scrape_url_extracts_article(self, mock_get):
-        html = """
-        <!DOCTYPE html>
-        <html>
-        <head>
-            <title>Título da Matéria Importante</title>
-            <meta property="og:title" content="Título da Matéria Importante" />
-            <meta property="og:description" content="Subtítulo da matéria com resumo detalhado." />
-        </head>
-        <body>
-            <article>
-                <p>O governo anunciou hoje medidas para o desenvolvimento econômico do país durante cerimônia oficial na capital.</p>
-                <p>As novas diretrizes entram em vigor a partir do próximo mês e beneficiam pequenos e médios empreendedores.</p>
-            </article>
-        </body>
-        </html>
-        """
-        mock_resp = MagicMock()
-        mock_resp.status_code = 200
-        mock_resp.text = html
-        mock_resp.headers = {"Content-Type": "text/html; charset=utf-8"}
-        mock_resp.url = "https://noticias.globo.com/materia-123"
-        mock_get.return_value = mock_resp
+    @patch("analysis.services.scraper.socket.getaddrinfo")
+    def test_ssrf_safety_rejects_mixed_public_and_private_dns(self, getaddrinfo):
+        getaddrinfo.return_value = self.dns_result("8.8.8.8") + self.dns_result("127.0.0.1")
+        with self.assertRaises(InputValidationError) as ctx:
+            validate_url_safety("https://noticias.globo.com/materia-123")
+        self.assertEqual(ctx.exception.code, "forbidden_url")
 
+    @patch("analysis.services.scraper.socket.getaddrinfo")
+    @patch("analysis.services.scraper.urllib3.HTTPSConnectionPool")
+    def test_scrape_url_extracts_article(self, pool_class, getaddrinfo):
+        getaddrinfo.return_value = self.dns_result("8.8.8.8")
+        pool = pool_class.return_value.__enter__.return_value
+        pool.urlopen.return_value = self.html_response()
         article = scrape_url("https://noticias.globo.com/materia-123")
-        self.assertIn("Título da Matéria", article.title)
+        self.assertIn("Titulo da Materia", article.title)
         self.assertTrue(len(article.body) > 50)
         self.assertEqual(article.domain, "noticias.globo.com")
+        pool_class.assert_called_once()
+        self.assertEqual(pool_class.call_args.args, ("8.8.8.8", 443))
+        self.assertEqual(pool_class.call_args.kwargs["server_hostname"], "noticias.globo.com")
+        self.assertEqual(pool_class.call_args.kwargs["assert_hostname"], "noticias.globo.com")
+        self.assertEqual(pool_class.call_args.kwargs["cert_reqs"], "CERT_REQUIRED")
+        self.assertEqual(pool.urlopen.call_args.kwargs["headers"]["Host"], "noticias.globo.com")
+        self.assertFalse(pool.urlopen.call_args.kwargs["redirect"])
+        getaddrinfo.assert_called_once()
+
+    @patch("analysis.services.scraper.socket.getaddrinfo")
+    @patch("analysis.services.scraper.urllib3.HTTPConnectionPool")
+    @patch("analysis.services.scraper.urllib3.HTTPSConnectionPool")
+    def test_redirect_to_private_address_is_blocked_before_request(self, https_pool, http_pool, getaddrinfo):
+        getaddrinfo.return_value = self.dns_result("8.8.8.8")
+        first = MagicMock(status=302, headers={"Location": "http://127.0.0.1/admin"}, data=b"")
+        https_pool.return_value.__enter__.return_value.urlopen.return_value = first
+
+        with self.assertRaises(InputValidationError) as ctx:
+            scrape_url("https://noticias.globo.com/materia-123")
+
+        self.assertEqual(ctx.exception.code, "forbidden_url")
+        http_pool.assert_not_called()
+        getaddrinfo.assert_called_once()
+
+    @patch("analysis.services.scraper.socket.getaddrinfo")
+    @patch("analysis.services.scraper.urllib3.HTTPSConnectionPool")
+    def test_dns_change_cannot_change_connected_address(self, pool_class, getaddrinfo):
+        getaddrinfo.side_effect = [self.dns_result("8.8.8.8"), self.dns_result("127.0.0.1")]
+        pool_class.return_value.__enter__.return_value.urlopen.return_value = self.html_response()
+
+        scrape_url("https://noticias.globo.com/materia-123")
+
+        pool_class.assert_called_once()
+        self.assertEqual(pool_class.call_args.args[0], "8.8.8.8")
+        getaddrinfo.assert_called_once()
+
+    @patch("analysis.services.scraper.socket.getaddrinfo")
+    @patch("analysis.services.scraper.urllib3.HTTPSConnectionPool")
+    def test_public_redirect_is_checked_and_followed(self, pool_class, getaddrinfo):
+        getaddrinfo.side_effect = [self.dns_result("8.8.8.8"), self.dns_result("1.1.1.1")]
+        first = MagicMock(status=302, headers={"Location": "https://outra.example/materia"}, data=b"")
+        pool_class.return_value.__enter__.return_value.urlopen.side_effect = [first, self.html_response()]
+
+        article = scrape_url("https://noticias.globo.com/materia-123")
+
+        self.assertEqual(article.url, "https://outra.example/materia")
+        self.assertEqual(article.domain, "outra.example")
+        self.assertEqual(getaddrinfo.call_count, 2)
+        self.assertEqual([call.args[0] for call in pool_class.call_args_list], ["8.8.8.8", "1.1.1.1"])
 
 
 class FactCheckTests(SimpleTestCase):
