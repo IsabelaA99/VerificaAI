@@ -1,0 +1,7 @@
+# Dependências de execução. Versões fixadas na data da entrega (08/10/2026).
+Flask==3.1.3
+gunicorn==26.2.0
+python-dotenv==1.2.4
+requests==2.34.2
+twilio==9.11.2
+tzdata==2026.5
