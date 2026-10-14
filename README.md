@@ -154,6 +154,26 @@ cd apura
 
 A API estará rodando em `http://localhost:8000`.
 
+O modelo é pré-carregado durante a inicialização (`MODEL_WARMUP=true`). Aguarde o
+servidor indicar que está pronto antes de abrir uma análise. A inicialização pode
+demorar mais na primeira execução; esse custo deixa de ocorrer no primeiro envio.
+
+As etapas de análise compartilham um prazo de 27 segundos, deixando margem para
+responder antes do timeout de 30 segundos da interface. A extração de URL tem até
+8 segundos; a consulta a fontes, até 8 segundos; e todos os provedores de síntese
+juntos, até 7 segundos, sempre respeitando o tempo restante. Comprova, Boatos.org e
+Wikipédia são consultados em paralelo. Fontes que não terminam no prazo são
+sinalizadas como consulta incompleta; a síntese usa o fallback local quando a IA
+externa atrasa. Se a extração ou o modelo não terminarem no prazo, a API responde
+`504` com `analysis_timeout`, sem persistir um resultado tardio. O banco e o
+transporte também precisam estar saudáveis para cumprir o prazo ponta a ponta.
+
+Os logs `analysis stage=model|sources|explanation|scrape ms=...` mostram o tempo
+de cada etapa sem registrar o texto analisado. Chamadas já iniciadas podem terminar
+em segundo plano após um timeout; há um limite de oito tarefas por processo, sem
+fila ilimitada. Os testes de latência usam serviços lentos simulados; não medem
+a disponibilidade real dos provedores.
+
 ### 2. Front end (React 19 + Vite 8)
 ```bash
 cd frontend

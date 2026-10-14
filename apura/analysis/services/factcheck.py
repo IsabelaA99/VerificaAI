@@ -12,11 +12,14 @@ import logging
 import re
 import unicodedata
 import urllib.parse
+from concurrent.futures import wait
 from typing import Any
 
 import requests
 from bs4 import BeautifulSoup
 from django.conf import settings
+
+from .timing import Deadline, DeadlineExceeded, ServiceBusy
 
 logger = logging.getLogger(__name__)
 
@@ -376,18 +379,44 @@ def _search_wikipedia(query: str, max_results: int = 2) -> list[dict[str, Any]]:
         return []
 
 
-def _search_fact_check_fallback(query: str) -> list[dict[str, Any]]:
+def _search_fact_check_fallback(
+    query: str, *, deadline: Deadline | None = None, failures: list[str] | None = None,
+) -> list[dict[str, Any]]:
     """
     Fallback integrado de checagem pública:
     1. Projeto Comprova (consórcio das maiores redações brasileiras)
     2. Boatos.org (desmentidos independentes)
     3. Wikipédia (registro histórico e científico de teorias e consensos)
     """
+    deadline = deadline or Deadline.after(5)
+    jobs = []
+    for search in (_search_comprova, _search_boatos, _search_wikipedia):
+        try:
+            jobs.append(deadline.submit(search, query))
+        except (DeadlineExceeded, ServiceBusy):
+            break
+    if jobs:
+        wait(jobs, timeout=deadline.remaining)
+    batches = []
+    incomplete = len(jobs) != 3
+    for job in jobs:
+        if not job.done():
+            job.cancel()
+            incomplete = True
+            batches.append([])
+            continue
+        try:
+            batches.append(job.result())
+        except Exception:
+            incomplete = True
+            batches.append([])
+    # Ordem estável mesmo quando as consultas terminam em ordem diferente.
+    batches += [[]] * (3 - len(batches))
     results: list[dict[str, Any]] = []
     seen_urls: set[str] = set()
 
     # Busca em checagens jornalísticas especializadas
-    for source in _search_comprova(query) + _search_boatos(query):
+    for source in batches[0] + batches[1]:
         url = source.get("url", "")
         if url and url not in seen_urls:
             seen_urls.add(url)
@@ -395,7 +424,7 @@ def _search_fact_check_fallback(query: str) -> list[dict[str, Any]]:
 
     # Se não encontrou apuração em agências, ou se restou espaço, consulta o consenso enciclopédico
     if len(results) < 3:
-        for wiki_item in _search_wikipedia(query):
+        for wiki_item in batches[2]:
             url = wiki_item.get("url", "")
             if url and url not in seen_urls:
                 seen_urls.add(url)
@@ -407,10 +436,12 @@ def _search_fact_check_fallback(query: str) -> list[dict[str, Any]]:
     for idx, item in enumerate(results, 1):
         item["id"] = f"src-{idx}"
 
+    if incomplete and failures is not None:
+        failures.append("source_timeout_or_busy")
     return results[:4]
 
 
-def search_fact_checks(claim_or_title: str) -> dict[str, Any]:
+def search_fact_checks(claim_or_title: str, *, deadline: Deadline | None = None) -> dict[str, Any]:
     """
     Busca checagens de fatos para a notícia ou alegação.
     Retorna estrutura padronizada para o serializer e pipeline:
@@ -424,6 +455,8 @@ def search_fact_checks(claim_or_title: str) -> dict[str, Any]:
     if not claim_or_title or len(claim_or_title.strip()) < 5:
         return {"status": "none", "enabled": True, "sources": [], "conflict_score": None}
 
+    deadline = deadline or Deadline.after(8)
+    failed = False
     query = _extract_query_keywords(claim_or_title)
     api_key = settings.FAKE_EYES.get("GOOGLE_FACT_CHECK_API_KEY", "")
 
@@ -431,7 +464,10 @@ def search_fact_checks(claim_or_title: str) -> dict[str, Any]:
 
     # 1. Tenta a API oficial do Google Fact Check se a chave estiver configurada
     if api_key:
-        sources = _search_google_fact_check(query, api_key)
+        try:
+            sources = deadline.child(3).call(_search_google_fact_check, query, api_key)
+        except (DeadlineExceeded, ServiceBusy):
+            failed = True
 
     # Resultados da busca podem tratar apenas de um assunto parecido.
     sources = [validated for source in sources
@@ -439,7 +475,10 @@ def search_fact_checks(claim_or_title: str) -> dict[str, Any]:
 
     # 2. Se a API não trouxe alegações relacionadas, utiliza o fallback
     if not sources:
-        sources = [validated for source in _search_fact_check_fallback(query)
+        failures = []
+        fallback = _search_fact_check_fallback(query, deadline=deadline.child(5), failures=failures)
+        failed = failed or bool(failures)
+        sources = [validated for source in fallback
                    if (validated := _validate_source_relation(claim_or_title, source)) is not None]
 
     # Avaliação do conflito de evidências (RF08)
@@ -454,6 +493,7 @@ def search_fact_checks(claim_or_title: str) -> dict[str, Any]:
 
     return {
         "status": "found" if sources else "none",
+        "failed": failed,
         "enabled": True,
         "sources": sources,
         "conflict_score": conflict_score,

@@ -13,6 +13,7 @@ from ..services import classifier as classifier_service
 from ..services import risk
 from ..services.pipeline import SCHEMA_VERSION, code_version, run_text_analysis, run_url_analysis
 from ..services.preprocessing import InputValidationError
+from ..services.timing import DeadlineExceeded, ServiceBusy
 from .errors import error_response
 from .serializers import AnalysisRequestSerializer, AnalysisResultSerializer
 
@@ -42,6 +43,18 @@ class AnalysisCreateView(APIView):
                     user=request.user,
                     visitor_id=request.headers.get("X-Visitor-Id", ""),
                 )
+        except DeadlineExceeded:
+            return error_response(
+                "analysis_timeout", "A análise não terminou no prazo disponível.",
+                "Tente novamente em instantes ou envie um trecho menor do texto.",
+                status.HTTP_504_GATEWAY_TIMEOUT,
+            )
+        except ServiceBusy:
+            return error_response(
+                "analysis_unavailable", "O serviço está ocupado com outras análises.",
+                "Aguarde alguns instantes antes de tentar novamente.",
+                status.HTTP_503_SERVICE_UNAVAILABLE,
+            )
         except InputValidationError as exc:
             return error_response(exc.code, exc.message, exc.action, status.HTTP_400_BAD_REQUEST,
                                   field=exc.field, details=exc.extra or None)

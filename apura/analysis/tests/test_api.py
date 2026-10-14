@@ -1,5 +1,7 @@
 """Testes de integração da API v1 com classificador simulado (RF29)."""
 
+import threading
+import time
 from unittest.mock import patch
 from django.test import TestCase
 from django.urls import reverse
@@ -10,6 +12,7 @@ from analysis.services import classifier as classifier_service
 from analysis.services import llm as llm_service
 from analysis.services.classifier import ClassificationResult
 from analysis.services.scraper import ScrapedArticle
+from analysis.services.timing import Deadline
 
 PT_TEXT = (
     "O Ministério da Saúde anunciou nesta segunda-feira uma nova campanha de vacinação "
@@ -41,12 +44,14 @@ class AnalysisApiTests(TestCase):
     def setUp(self):
         self.groq_patch = patch("analysis.services.llm._call_groq", return_value=None)
         self.gemini_patch = patch("analysis.services.llm._call_gemini", return_value=None)
+        self.openai_patch = patch("analysis.services.llm._call_openai", return_value=None)
         self.fact_patch = patch(
             "analysis.services.pipeline.factcheck.search_fact_checks",
             return_value={"status": "none", "enabled": True, "sources": [], "conflict_score": None},
         )
         self.groq_patch.start()
         self.gemini_patch.start()
+        self.openai_patch.start()
         self.fact_patch.start()
         self.client = APIClient()
         self.url = reverse("api-v1:analysis-create")
@@ -54,11 +59,24 @@ class AnalysisApiTests(TestCase):
     def tearDown(self):
         self.groq_patch.stop()
         self.gemini_patch.stop()
+        self.openai_patch.stop()
         self.fact_patch.stop()
         classifier_service.set_classifier(None)
 
     def _post(self, payload):
         return self.client.post(self.url, payload, format="json")
+
+    def test_url_in_text_rejected_before_model_search_or_save(self):
+        url = "https://noticias.uol.com.br/colunas/thais-bilenky/2026/10/14/ia-da-meta-bandeira-lula-e-flavio-bolsonaro.htm"
+        with patch("analysis.services.pipeline.get_classifier") as model, \
+             patch("analysis.services.pipeline.factcheck.search_fact_checks") as search:
+            response = self._post({"input_type": "text", "text": url})
+        self.assertEqual(response.status_code, 400)
+        self.assertEqual(response.json()["error"]["code"], "url_in_text")
+        self.assertEqual(response.json()["error"]["field"], "text")
+        model.assert_not_called()
+        search.assert_not_called()
+        self.assertFalse(Analysis.objects.exists())
 
     def test_high_risk_result(self):
         classifier_service.set_classifier(FakeClassifier(0.98))
@@ -168,6 +186,44 @@ class AnalysisApiTests(TestCase):
         resp = self.client.get("/api/v1/analyses/00000000-0000-0000-0000-000000000000/")
         self.assertEqual(resp.status_code, 404)
         self.assertEqual(resp.json()["error"]["code"], "analysis_not_found")
+
+    def test_slow_model_returns_504_without_late_persistence(self):
+        release = threading.Event()
+        finished = threading.Event()
+
+        class Slow(FakeClassifier):
+            def classify(self, *args, **kwargs):
+                release.wait(timeout=2)
+                try:
+                    return super().classify(*args, **kwargs)
+                finally:
+                    finished.set()
+
+        classifier_service.set_classifier(Slow(0.9))
+        # O modelo deixa 2 s de reserva; apenas 50 ms ficam disponíveis neste teste.
+        with patch("analysis.services.pipeline._request_deadline", side_effect=lambda: Deadline.after(2.05)):
+            try:
+                started = time.monotonic()
+                response = self._post({"text": PT_TEXT})
+                self.assertLess(time.monotonic() - started, 0.8)
+                self.assertEqual(response.status_code, 504)
+                self.assertEqual(response.json()["error"]["code"], "analysis_timeout")
+                self.assertEqual(Analysis.objects.count(), 0)
+            finally:
+                release.set()
+                self.assertTrue(finished.wait(timeout=2))
+        self.assertEqual(Analysis.objects.count(), 0)
+
+    def test_partial_source_timeout_is_exposed_in_result(self):
+        classifier_service.set_classifier(FakeClassifier(0.9))
+        self.fact_patch.stop()
+        with patch("analysis.services.pipeline.factcheck.search_fact_checks", return_value={
+            "status": "none", "sources": [], "conflict_score": None, "failed": True,
+        }):
+            response = self._post({"text": PT_TEXT})
+        self.assertEqual(response.status_code, 201)
+        self.assertTrue(response.json()["evidence"]["failed"])
+        self.assertTrue(any("prazo" in text for text in response.json()["limitations"]))
 
     def test_health(self):
         resp = self.client.get(reverse("api-v1:health"))

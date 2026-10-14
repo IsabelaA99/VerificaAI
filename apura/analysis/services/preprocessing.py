@@ -140,6 +140,15 @@ def build_news_input(text: str, title: str = "", subtitle: str = "") -> NewsInpu
             "Cole o conteúdo da notícia no campo de texto.", field="text",
         )
 
+    # Um endereço pode conter palavras em português e passar nas demais
+    # validações, mas seus caracteres não são o conteúdo da notícia.
+    if re.fullmatch(r"(?:https?://|www\.)\S+", body, flags=re.IGNORECASE):
+        raise InputValidationError(
+            "url_in_text", "Você colou um link no campo de texto.",
+            "Use a aba Inserir link ou cole o conteúdo da notícia em Colar texto.",
+            field="text",
+        )
+
     total_len = len(body) + len(title) + len(subtitle)
     if total_len < min_chars:
         raise InputValidationError(

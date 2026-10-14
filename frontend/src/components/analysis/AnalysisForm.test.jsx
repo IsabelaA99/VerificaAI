@@ -111,6 +111,25 @@ describe('estrutura e acessibilidade', () => {
 })
 
 describe('RF24: só a opção escolhida vai na solicitação', () => {
+  it('orienta link no campo de texto sem enviar ou consumir análise e permite corrigir a aba', async () => {
+    const { fetchImpl, services } = setup()
+    const url = 'https://noticias.uol.com.br/colunas/thais-bilenky/2026/10/14/ia-da-meta-bandeira-lula-e-flavio-bolsonaro.htm'
+    await userEvent.click(textarea())
+    await userEvent.paste(url)
+    await userEvent.click(submit())
+    expect(await findErrorAlert()).toHaveTextContent('Você colou um link no campo de texto.')
+    expect(queryErrorAlert()).toHaveTextContent('Use a aba Inserir link')
+    expect(fetchImpl).not.toHaveBeenCalled()
+    expect(services.visitorLimit.remaining()).toBe(VISITOR_LIMIT.max)
+    expect(textarea()).toHaveFocus()
+    await userEvent.click(screen.getByRole('tab', { name: 'Inserir link' }))
+    await userEvent.click(screen.getByLabelText('Endereço completo da notícia'))
+    await userEvent.paste(url)
+    await userEvent.click(submit())
+    await waitFor(() => expect(fetchImpl).toHaveBeenCalledTimes(1))
+    expect(bodyOf(fetchImpl)).toEqual({ input_type: 'url', url })
+  })
+
   it('na aba de texto, envia só o texto', async () => {
     const { fetchImpl } = setup()
     await userEvent.type(textarea(), VALID_TEXT)

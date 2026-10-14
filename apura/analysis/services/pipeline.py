@@ -21,10 +21,22 @@ from . import factcheck, llm, risk
 from .classifier import get_classifier
 from .preprocessing import NewsInput, build_news_input, summarize_claim
 from .scraper import scrape_url
+from .timing import Deadline
 
 logger = logging.getLogger(__name__)
 
 SCHEMA_VERSION = "1.0"
+
+
+def _request_deadline() -> Deadline:
+    # Reserva 3 s dos 30 s do navegador para serialização, banco e transporte.
+    return Deadline.after(27)
+
+
+def _classify_news(news: NewsInput, rules):
+    classifier = get_classifier()
+    temperature = float(rules.calibrator.get("temperature", 1.0))
+    return classifier.classify(news.title, news.subtitle, news.body, temperature=temperature)
 
 
 @lru_cache(maxsize=1)
@@ -72,26 +84,30 @@ def _execute_pipeline(
     user=None,
     visitor_id: str = "",
     started: float,
+    deadline: Deadline,
 ) -> Analysis:
     rules = risk.load_rules()
 
     # 1. Inferência do modelo BERTimbau V4 (com fatiamento determinístico e tokens [SEP])
-    classifier = get_classifier()
-    temperature = float(rules.calibrator.get("temperature", 1.0))
-    cls = classifier.classify(news.title, news.subtitle, news.body, temperature=temperature)
+    stage_started = time.perf_counter()
+    cls = deadline.child(27, reserve=2).call(_classify_news, news, rules)
+    logger.info("analysis stage=model ms=%.1f", (time.perf_counter() - stage_started) * 1000)
 
     # 2. Indicadores estilísticos e linguísticos
     ling = risk.linguistic_indicators(news.full_text, rules.linguistic)
 
     # 3. Busca de checagens na internet (Google Fact Check Tools / Agências de Checagem)
     claim_query = news.title or summarize_claim(news)
-    fact_res = factcheck.search_fact_checks(claim_query)
+    stage_started = time.perf_counter()
+    fact_res = factcheck.search_fact_checks(claim_query, deadline=deadline.child(8, reserve=2))
+    logger.info("analysis stage=sources ms=%.1f", (time.perf_counter() - stage_started) * 1000)
     evidence_conflict = fact_res.get("conflict_score")
     verified_sources = [source for source in fact_res.get("sources", [])
                         if source.get("relation") in ("conflicting", "compatible")]
 
     # Fontes apenas contextuais aparecem no resultado, mas não sustentam a síntese nem a abstenção.
     # 4. Síntese explicativa via LLM (Gemini / Groq / OpenAI / Síntese Neural Especializada)
+    stage_started = time.perf_counter()
     llm_res = llm.synthesize_explanation(
         title=news.title,
         body=news.body,
@@ -101,7 +117,9 @@ def _execute_pipeline(
         linguistic_indicators=ling,
         sources=verified_sources,
         source_domain=source_domain,
+        deadline=deadline.child(7, reserve=1),
     )
+    logger.info("analysis stage=explanation ms=%.1f", (time.perf_counter() - stage_started) * 1000)
 
     # 5. Cálculo do Índice de Risco Ponderado
     sem_comp = getattr(llm_res, "semantic_comparison", {}) or {}
@@ -198,6 +216,7 @@ def _execute_pipeline(
             "enabled": True,
             "status": fact_res.get("status", "none"),
             "sources": fact_res.get("sources", []),
+            "failed": fact_res.get("failed", False),
         },
         "llm_analysis": {
             "summary": llm_res.summary,
@@ -224,6 +243,12 @@ def _execute_pipeline(
         ),
     }
 
+    if fact_res.get("failed"):
+        technical["limitations"].append(
+            "Parte da consulta a fontes externas não terminou no prazo; as evidências podem estar incompletas."
+        )
+    version = code_version()
+    deadline.check()
     analysis = Analysis.objects.create(
         user=user if getattr(user, "is_authenticated", False) else None,
         visitor_id=visitor_id[:64],
@@ -242,7 +267,7 @@ def _execute_pipeline(
         rules_version=rules.version,
         calibrator_version=str(rules.calibrator.get("version", "none")),
         schema_version=SCHEMA_VERSION,
-        code_version=code_version(),
+        code_version=version,
         duration_ms=round((time.perf_counter() - started) * 1000, 2),
     )
 
@@ -256,6 +281,7 @@ def _execute_pipeline(
 
 def run_text_analysis(*, text: str, title: str = "", subtitle: str = "", user=None, visitor_id: str = "") -> Analysis:
     started = time.perf_counter()
+    deadline = _request_deadline()
     news = build_news_input(text=text, title=title, subtitle=subtitle)
     return _execute_pipeline(
         news=news,
@@ -264,12 +290,16 @@ def run_text_analysis(*, text: str, title: str = "", subtitle: str = "", user=No
         user=user,
         visitor_id=visitor_id,
         started=started,
+        deadline=deadline,
     )
 
 
 def run_url_analysis(*, url: str, user=None, visitor_id: str = "") -> Analysis:
     started = time.perf_counter()
-    scraped = scrape_url(url)
+    deadline = _request_deadline()
+    scrape_deadline = deadline.child(8)
+    scraped = scrape_deadline.call(scrape_url, url, deadline=scrape_deadline)
+    logger.info("analysis stage=scrape ms=%.1f", (time.perf_counter() - started) * 1000)
     news = build_news_input(text=scraped.body, title=scraped.title, subtitle=scraped.subtitle)
     return _execute_pipeline(
         news=news,
@@ -278,4 +308,5 @@ def run_url_analysis(*, url: str, user=None, visitor_id: str = "") -> Analysis:
         user=user,
         visitor_id=visitor_id,
         started=started,
+        deadline=deadline,
     )

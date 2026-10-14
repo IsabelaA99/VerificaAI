@@ -20,7 +20,7 @@
 import { TEXT_LIMITS, URL_MAX_LENGTH } from './limits.js'
 
 /** @typedef {'invalid_url'|'page_unreachable'|'text_insufficient'|'unsupported_language'|'api_unavailable'|'evidence_failure'|'timeout'} Rf27Scenario */
-/** @typedef {'text_too_long'|'text_unreadable'|'url_unavailable'|'rate_limited'|'incompatible_api'|'not_found'|'rejected'|'unknown'} OtherScenario */
+/** @typedef {'text_too_long'|'text_unreadable'|'url_in_text'|'url_unavailable'|'rate_limited'|'incompatible_api'|'not_found'|'rejected'|'unknown'} OtherScenario */
 /** @typedef {Rf27Scenario | OtherScenario} Scenario */
 /** @typedef {'fix_input'|'paste_text'|'retry'|'reload'|'new_analysis'|'open_history'} ErrorActionId */
 
@@ -38,6 +38,7 @@ export const RF27_SCENARIOS = /** @type {const} */ ([
 export const OTHER_SCENARIOS = /** @type {const} */ ([
   'text_too_long',
   'text_unreadable',
+  'url_in_text',
   'url_unavailable',
   'rate_limited',
   'incompatible_api',
@@ -66,6 +67,7 @@ const CODE_TO_SCENARIO = Object.freeze({
   text_too_short: 'text_insufficient',
   text_too_long: 'text_too_long',
   unreadable_input: 'text_unreadable',
+  url_in_text: 'url_in_text',
   unsupported_language: 'unsupported_language',
   url_input_unavailable: 'url_unavailable',
   analysis_unavailable: 'api_unavailable',
@@ -140,6 +142,13 @@ const formatCount = (value) => (typeof value === 'number' ? numberFormat.format(
 export function describeError(error) {
   const d = error.details
   switch (error.scenario) {
+    case 'url_in_text':
+      return {
+        title: 'Você colou um link no campo de texto.',
+        message: 'Use a aba Inserir link, se disponível, ou cole o conteúdo da notícia em Colar texto. O endereço sozinho não permite analisar a notícia.',
+        actions: ['fix_input'],
+        field: 'text',
+      }
     case 'invalid_url': {
       const reason = d.reason
       const message =

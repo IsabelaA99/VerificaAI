@@ -20,6 +20,8 @@ from typing import Any
 import requests
 from django.conf import settings
 
+from .timing import Deadline, DeadlineExceeded, ServiceBusy
+
 logger = logging.getLogger(__name__)
 
 
@@ -212,15 +214,18 @@ def _parse_llm_json(parsed: dict[str, Any], provider: str, source_domain: str = 
     )
 
 
-def _call_gemini(prompt: str, api_key: str, source_domain: str = "") -> LLMExplanation | None:
+def _call_gemini(prompt: str, api_key: str, source_domain: str = "", *, deadline: Deadline | None = None) -> LLMExplanation | None:
+    deadline = deadline or Deadline.after(7)
     for model_name in ("gemini-2.5-flash", "gemini-2.0-flash", "gemini-1.5-flash"):
+        if deadline.remaining <= 0:
+            break
         url = f"https://generativelanguage.googleapis.com/v1beta/models/{model_name}:generateContent?key={api_key}"
         payload = {
             "contents": [{"parts": [{"text": prompt}]}],
             "generationConfig": {"temperature": 0.0, "responseMimeType": "application/json"},
         }
         try:
-            resp = requests.post(url, json=payload, timeout=4)
+            resp = requests.post(url, json=payload, timeout=deadline.timeout(4))
             if resp.status_code == 200:
                 data = resp.json()
                 candidates = data.get("candidates") or []
@@ -229,14 +234,20 @@ def _call_gemini(prompt: str, api_key: str, source_domain: str = "") -> LLMExpla
                     parsed = json.loads(raw_text)
                     return _parse_llm_json(parsed, provider=f"Google Gemini ({model_name})", source_domain=source_domain)
             else:
-                logger.warning("Gemini %s retornou status %d: %s", model_name, resp.status_code, resp.text[:200])
-        except Exception:
-            logger.exception("Falha na chamada ao Gemini API (%s)", model_name)
+                logger.warning("Gemini %s retornou status %d", model_name, resp.status_code)
+                if resp.status_code in (401, 403, 429):
+                    break
+        except Exception as exc:
+            logger.warning("Falha na chamada ao Gemini API (%s): %s", model_name, type(exc).__name__)
+            break
     return None
 
 
-def _call_groq(prompt: str, api_key: str, source_domain: str = "") -> LLMExplanation | None:
+def _call_groq(prompt: str, api_key: str, source_domain: str = "", *, deadline: Deadline | None = None) -> LLMExplanation | None:
+    deadline = deadline or Deadline.after(7)
     for model_name in ("openai/gpt-oss-120b", "openai/gpt-oss-20b", "qwen/qwen3.8-27b", "llama-3.3-70b-versatile"):
+        if deadline.remaining <= 0:
+            break
         url = "https://api.groq.com/openai/v1/chat/completions"
         headers = {"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"}
         payload = {
@@ -249,20 +260,24 @@ def _call_groq(prompt: str, api_key: str, source_domain: str = "") -> LLMExplana
             "temperature": 0.0,
         }
         try:
-            resp = requests.post(url, headers=headers, json=payload, timeout=9)
+            resp = requests.post(url, headers=headers, json=payload, timeout=deadline.timeout(5))
             if resp.status_code == 200:
                 data = resp.json()
                 content = data["choices"][0]["message"]["content"]
                 parsed = json.loads(content)
                 return _parse_llm_json(parsed, provider=f"Groq ({model_name})", source_domain=source_domain)
             else:
-                logger.warning("Groq (%s) retornou status %d: %s", model_name, resp.status_code, resp.text[:200])
-        except Exception:
-            logger.exception("Falha na chamada ao Groq API (%s)", model_name)
+                logger.warning("Groq (%s) retornou status %d", model_name, resp.status_code)
+                if resp.status_code in (401, 403, 429):
+                    break
+        except Exception as exc:
+            logger.warning("Falha na chamada ao Groq API (%s): %s", model_name, type(exc).__name__)
+            break
     return None
 
 
-def _call_openai(prompt: str, api_key: str, source_domain: str = "") -> LLMExplanation | None:
+def _call_openai(prompt: str, api_key: str, source_domain: str = "", *, deadline: Deadline | None = None) -> LLMExplanation | None:
+    deadline = deadline or Deadline.after(7)
     url = "https://api.openai.com/v1/chat/completions"
     headers = {"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"}
     payload = {
@@ -275,14 +290,14 @@ def _call_openai(prompt: str, api_key: str, source_domain: str = "") -> LLMExpla
         "temperature": 0.0,
     }
     try:
-        resp = requests.post(url, headers=headers, json=payload, timeout=9)
+        resp = requests.post(url, headers=headers, json=payload, timeout=deadline.timeout(5))
         if resp.status_code == 200:
             data = resp.json()
             content = data["choices"][0]["message"]["content"]
             parsed = json.loads(content)
             return _parse_llm_json(parsed, provider="OpenAI (gpt-4o-mini)", source_domain=source_domain)
-    except Exception:
-        logger.exception("Falha na chamada ao OpenAI API")
+    except Exception as exc:
+        logger.warning("Falha na chamada ao OpenAI API: %s", type(exc).__name__)
     return None
 
 
@@ -513,6 +528,8 @@ def synthesize_explanation(
     linguistic_indicators: dict[str, Any],
     sources: list[dict[str, Any]],
     source_domain: str = "",
+    *,
+    deadline: Deadline | None = None,
 ) -> LLMExplanation:
     """
     Executa a avaliação especialista da notícia:
@@ -520,6 +537,7 @@ def synthesize_explanation(
     com fallback determinístico de alta precisão.
     """
     cfg = settings.FAKE_EYES
+    deadline = deadline or Deadline.after(7)
     prompt = _build_prompt(
         title=title,
         body=body,
@@ -531,24 +549,19 @@ def synthesize_explanation(
         source_domain=source_domain,
     )
 
-    # 1. Tenta Groq (modelos ativos: openai/gpt-oss-120b, qwen3.8-27b - ultrarrápido)
-    groq_key = cfg.get("GROQ_API_KEY")
-    if groq_key:
-        res = _call_groq(prompt, groq_key, source_domain=source_domain)
-        if res:
-            return res
-
-    # 2. Tenta Gemini (Google AI Studio)
-    gemini_key = cfg.get("GEMINI_API_KEY")
-    if gemini_key:
-        res = _call_gemini(prompt, gemini_key, source_domain=source_domain)
-        if res:
-            return res
-
-    # 3. Tenta OpenAI
-    openai_key = cfg.get("OPENAI_API_KEY")
-    if openai_key:
-        res = _call_openai(prompt, openai_key, source_domain=source_domain)
+    # Todos os provedores compartilham o mesmo prazo, inclusive suas retentativas.
+    for key_name, provider in (
+        ("GROQ_API_KEY", _call_groq),
+        ("GEMINI_API_KEY", _call_gemini),
+        ("OPENAI_API_KEY", _call_openai),
+    ):
+        key = cfg.get(key_name)
+        if not key:
+            continue
+        try:
+            res = deadline.call(provider, prompt, key, source_domain=source_domain, deadline=deadline)
+        except (DeadlineExceeded, ServiceBusy):
+            break
         if res:
             return res
 

@@ -9,7 +9,7 @@ import { countCharacters, normalizeText } from './text.js'
 /**
  * @typedef {{
  *   ok: false,
- *   scenario: 'text_insufficient' | 'text_too_long' | 'invalid_url',
+ *   scenario: 'text_insufficient' | 'text_too_long' | 'invalid_url' | 'url_in_text',
  *   code: string,
  *   field: 'text' | 'url',
  *   details: Record<string, unknown>,
@@ -26,6 +26,9 @@ import { countCharacters, normalizeText } from './text.js'
 export function validateText(raw) {
   const value = normalizeText(raw)
   const length = countCharacters(value)
+  if (/^(?:https?:\/\/|www\.)\S+$/i.test(value)) {
+    return { ok: false, scenario: 'url_in_text', code: 'url_in_text', field: 'text', details: {} }
+  }
   if (length === 0) {
     return {
       ok: false,

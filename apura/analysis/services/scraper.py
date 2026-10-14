@@ -22,6 +22,7 @@ from bs4 import BeautifulSoup
 import trafilatura
 
 from .preprocessing import InputValidationError, normalize_text
+from .timing import Deadline
 
 logger = logging.getLogger(__name__)
 MAX_REDIRECTS = 5
@@ -127,10 +128,12 @@ def validate_url_safety(url: str) -> str:
     return hostname
 
 
-def _get_public_url(url: str, timeout: int) -> requests.Response:
+def _get_public_url(url: str, timeout: int, deadline: Deadline | None = None) -> requests.Response:
     """Busca cada salto por IP validado, mantendo Host, SNI e validação TLS."""
     current_url = url
     for redirect_count in range(MAX_REDIRECTS + 1):
+        if deadline:
+            deadline.check()
         prepared = requests.Request("GET", current_url, headers=BROWSER_HEADERS).prepare()
         current_url = prepared.url
         hostname, ip, port = _public_destination(current_url)
@@ -153,7 +156,8 @@ def _get_public_url(url: str, timeout: int) -> requests.Response:
             }
         with pool_type(ip, port, **pool_kwargs) as pool:
             raw = pool.urlopen(
-                "GET", prepared.path_url, headers=headers, timeout=timeout,
+                "GET", prepared.path_url, headers=headers,
+                timeout=deadline.timeout(timeout) if deadline else timeout,
                 retries=False, redirect=False, decode_content=True,
             )
             response = requests.Response()
@@ -177,13 +181,13 @@ def _get_public_url(url: str, timeout: int) -> requests.Response:
     raise AssertionError("limite de redirecionamentos não aplicado")
 
 
-def scrape_url(url: str, timeout: int = 12) -> ScrapedArticle:
+def scrape_url(url: str, timeout: int = 12, *, deadline: Deadline | None = None) -> ScrapedArticle:
     """
     Raspa uma notícia a partir da URL, contornando popups de cookies/anúncios.
     """
     # 1. Download do HTML com proteção e cabeçalhos de navegador
     try:
-        response = _get_public_url(url, timeout)
+        response = _get_public_url(url, timeout, deadline=deadline)
     except (requests.exceptions.Timeout, urllib3.exceptions.TimeoutError) as exc:
         raise InputValidationError(
             "url_timeout",

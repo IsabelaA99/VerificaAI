@@ -184,7 +184,7 @@ FAKE_EYES = {
     # Sobreposição (em tokens) entre trechos consecutivos de textos longos.
     "CHUNK_STRIDE": int(os.environ.get("CHUNK_STRIDE", "16")),
     # Carrega o modelo na inicialização do processo (recomendado em produção).
-    "WARMUP_ON_STARTUP": env_bool("MODEL_WARMUP", False),
+    "WARMUP_ON_STARTUP": env_bool("MODEL_WARMUP", True),
     # Arquivo de regras versionado (pesos, limiares, faixas).
     "RULES_FILE": os.environ.get("RULES_FILE", str(BASE_DIR / "analysis" / "rules" / "rules_v1.json")),
     # Versão do código em execução (ex.: SHA do commit, injetado no deploy).

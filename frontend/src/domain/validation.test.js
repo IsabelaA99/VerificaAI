@@ -5,6 +5,18 @@ import { validateInput, validateText, validateUrl } from './validation.js'
 const chars = (n) => 'a'.repeat(n)
 
 describe('validateText (RF01: de 50 a 5.000 caracteres)', () => {
+  it.each([
+    'https://noticias.uol.com.br/colunas/thais-bilenky/2026/10/14/ia-da-meta-bandeira-lula-e-flavio-bolsonaro.htm',
+    '  HTTPS://exemplo.com/noticia\n',
+    'www.exemplo.com/noticia',
+  ])('recusa endereço sozinho como texto: %s', (url) => {
+    expect(validateText(url)).toMatchObject({ ok: false, code: 'url_in_text', field: 'text' })
+  })
+
+  it('aceita texto de notícia que inclui um link de referência', () => {
+    expect(validateText('A prefeitura anunciou novos horários para o transporte coletivo. Fonte: https://exemplo.com')).toMatchObject({ ok: true })
+  })
+
   it('recusa vazio e só espaços como entrada vazia', () => {
     for (const raw of ['', '   ', '\n\n\t']) {
       const result = validateText(raw)

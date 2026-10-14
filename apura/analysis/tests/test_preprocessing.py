@@ -18,6 +18,21 @@ PT_TEXT = (
 
 
 class ValidationTests(SimpleTestCase):
+    def test_url_alone_is_not_news_text(self):
+        for text in (
+            "https://noticias.uol.com.br/colunas/thais-bilenky/2026/10/14/ia-da-meta-bandeira-lula-e-flavio-bolsonaro.htm",
+            "  HTTPS://exemplo.com/noticia\n",
+            "www.exemplo.com/noticia",
+        ):
+            with self.subTest(text=text), self.assertRaises(InputValidationError) as ctx:
+                build_news_input(text, title="Título informado")
+            self.assertEqual(ctx.exception.code, "url_in_text")
+            self.assertEqual(ctx.exception.field, "text")
+
+    def test_news_text_can_include_a_source_url(self):
+        text = PT_TEXT + " Fonte: https://exemplo.com/noticia"
+        self.assertEqual(build_news_input(text).body, text)
+
     def test_valid_text(self):
         news = build_news_input(PT_TEXT)
         self.assertEqual(news.body, PT_TEXT)
