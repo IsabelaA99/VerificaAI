@@ -156,16 +156,13 @@ def _parse_llm_json(parsed: dict[str, Any], provider: str, source_domain: str = 
     semantic = parsed["semantic_comparison"]
     lexical = parsed["lexical_analysis"]
 
-    summary_lower = parsed["summary"].lower()
     discourse_raw = parsed["discourse_type"].lower()
     is_traditional = is_traditional_press_domain(source_domain) and not is_satirical_domain(source_domain)
 
-    if (
-        is_satirical_domain(source_domain)
-        or any(k in discourse_raw for k in ("satir", "humor", "parod", "fictici", "comedi", "piada"))
-        or "satíric" in summary_lower
-        or "sátira" in summary_lower
-        or "paródia" in summary_lower
+    # Só o campo estruturado decide: procurar "satírico" no resumo pegava a negação ("não há
+    # indícios de teor satírico") e marcava como sátira até notícia da Agência Brasil.
+    if is_satirical_domain(source_domain) or any(
+        k in discourse_raw for k in ("satir", "humor", "parod", "fictici", "comedi", "piada")
     ):
         discourse_type = "satira"
         discourse_label = "Sátira / Humor Jornalístico"
@@ -214,16 +211,22 @@ def _parse_llm_json(parsed: dict[str, Any], provider: str, source_domain: str = 
 
 def _call_gemini(prompt: str, api_key: str, source_domain: str = "", *, deadline: Deadline | None = None) -> LLMExplanation | None:
     deadline = deadline or Deadline.after(7)
-    for model_name in ("gemini-2.5-flash", "gemini-2.0-flash", "gemini-1.5-flash"):
+    # Os modelos 1.5, 2.0 e 2.5 não estão mais disponíveis para chaves novas (404). Os "flash"
+    # completos passam de 20 s; os "flash-lite" com raciocínio mínimo respondem em poucos segundos.
+    for model_name in ("gemini-flash-lite-latest", "gemini-3.1-flash-lite"):
         if deadline.remaining <= 0:
             break
         url = f"https://generativelanguage.googleapis.com/v1beta/models/{model_name}:generateContent?key={api_key}"
         payload = {
             "contents": [{"parts": [{"text": prompt}]}],
-            "generationConfig": {"temperature": 0.0, "responseMimeType": "application/json"},
+            "generationConfig": {
+                "temperature": 0.0,
+                "responseMimeType": "application/json",
+                "thinkingConfig": {"thinkingLevel": "minimal"},
+            },
         }
         try:
-            resp = requests.post(url, json=payload, timeout=deadline.timeout(4))
+            resp = requests.post(url, json=payload, timeout=deadline.timeout(7))
             if resp.status_code == 200:
                 data = resp.json()
                 candidates = data.get("candidates") or []

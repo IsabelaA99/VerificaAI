@@ -4,8 +4,10 @@ from django.test import SimpleTestCase
 
 from analysis.services.preprocessing import (
     InputValidationError,
+    NewsInput,
     build_news_input,
     detect_portuguese,
+    is_substantive_claim,
     mask_pii,
     normalize_text,
     summarize_claim,
@@ -102,3 +104,32 @@ class PrivacyTests(SimpleTestCase):
         summary = summarize_claim(news)
         self.assertNotIn("98765-4321", summary)
         self.assertLessEqual(len(summary), 140)
+
+
+class ClaimSummaryTests(SimpleTestCase):
+    """A alegação é o que vai para a busca de checagens: bordão não é alegação."""
+
+    CHAIN = (
+        "URGENTE!!! Vacina contra covid causa autismo em crianças, comprovam cientistas. "
+        "O governo esconde a verdade e a mídia não quer que você saiba. Compartilhe antes que apaguem!"
+    )
+
+    def test_bordao_no_inicio_e_pulado(self):
+        self.assertEqual(
+            summarize_claim(build_news_input(self.CHAIN)),
+            "Vacina contra covid causa autismo em crianças, comprovam cientistas.",
+        )
+
+    def test_titulo_que_e_so_bordao_cede_lugar_a_frase_com_conteudo(self):
+        news = build_news_input("ATENÇÃO URGENTE!!!\n" + self.CHAIN)
+        self.assertTrue(news.title_inferred)
+        self.assertFalse(is_substantive_claim(news.title))
+        self.assertTrue(summarize_claim(news).startswith("Vacina contra covid"))
+
+    def test_titulo_com_conteudo_continua_sendo_a_alegacao(self):
+        news = build_news_input("Ministério anuncia vacinação contra gripe\n" + PT_TEXT)
+        self.assertEqual(summarize_claim(news), "Ministério anuncia vacinação contra gripe")
+
+    def test_sem_nenhuma_frase_com_conteudo_mantem_o_comportamento_antigo(self):
+        news = NewsInput(title="", subtitle="", body="URGENTE!!! Compartilhe!", title_inferred=False)
+        self.assertEqual(summarize_claim(news), "URGENTE!!!")

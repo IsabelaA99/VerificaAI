@@ -91,3 +91,30 @@ class LLMResponseValidationTests(SimpleTestCase):
             with self.subTest(provider=provider.__name__), patch.object(llm.requests, "post", return_value=response) as post:
                 self.assertIsNone(provider("prompt de teste", "dummy-key"))
                 self.assertEqual(post.call_count, 1)
+
+
+class GeminiAndSatireTests(SimpleTestCase):
+    def test_gemini_usa_modelo_disponivel_com_raciocinio_minimo(self):
+        # Os modelos 1.5, 2.0 e 2.5 respondem 404 para chaves novas
+        response = Mock(status_code=200)
+        response.json.return_value = {"candidates": [{"content": {"parts": [{"text": json.dumps(valid_llm_payload())}]}}]}
+        with patch.object(llm.requests, "post", return_value=response) as post:
+            result = llm._call_gemini("prompt", "chave")
+        self.assertEqual(result.provider, "Google Gemini (gemini-flash-lite-latest)")
+        url = post.call_args.args[0]
+        self.assertIn("/models/gemini-flash-lite-latest:generateContent", url)
+        self.assertEqual(post.call_args.kwargs["json"]["generationConfig"]["thinkingConfig"], {"thinkingLevel": "minimal"})
+
+    def test_resumo_que_nega_satira_nao_vira_satira(self):
+        # Caso real (Groq, Agência Brasil): o resumo descartava a sátira e o código a detectava
+        payload = valid_llm_payload()
+        payload["summary"] = "Não há indícios de teor conspiratório, opinativo ou satírico."
+        result = llm._parse_llm_json(payload, provider="teste", source_domain="agenciabrasil.ebc.com.br")
+        self.assertEqual(result.discourse_type, "factual")
+
+    def test_satira_indicada_pela_ia_continua_sendo_satira(self):
+        payload = valid_llm_payload()
+        payload["discourse_type"] = "satira"
+        result = llm._parse_llm_json(payload, provider="teste")
+        self.assertEqual(result.discourse_type, "satira")
+        self.assertEqual(result.semantic_comparison["consensus_status"], "diverge_consenso")

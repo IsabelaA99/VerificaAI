@@ -205,11 +205,33 @@ def mask_pii(text: str) -> str:
     return text
 
 
+# Bordões de corrente: chamam atenção, mas não afirmam nada sobre o mundo.
+_SLOGAN_WORDS = {
+    "urgente", "atenção", "atencao", "alerta", "importante", "bomba", "compartilhe",
+    "compartilhem", "repasse", "repassem", "veja", "leia", "antes", "que", "apaguem", "apague",
+}
+
+
+def is_substantive_claim(text: str) -> bool:
+    """
+    Se o trecho afirma algo: ao menos três palavras de conteúdo. "URGENTE!!!" ou
+    "Compartilhe antes que apaguem!" como alegação levavam a busca de checagens a
+    procurar só "URGENTE" e a trazer checagens de outros assuntos.
+    """
+    words = [w for w in re.findall(r"\w+", text.lower()) if len(w) >= 3 and w not in _SLOGAN_WORDS]
+    return len(words) >= 3
+
+
 def summarize_claim(news: NewsInput, max_len: int = 140) -> str:
     """
     Resumo curto da alegação para histórico (RF20). Até a Etapa 3 (RF06) usamos
-    o título, ou a primeira frase do corpo, sempre com PII mascarada.
+    o título, ou a primeira frase do corpo, sempre com PII mascarada. Título ou frase
+    que seja só um bordão é pulado em favor da primeira frase com conteúdo.
     """
-    base = news.title or re.split(r"(?<=[.!?])\s", news.body, maxsplit=1)[0]
+    sentences = [s for s in re.split(r"(?<=[.!?])\s+", news.body.strip()) if s.strip()]
+    candidates = [news.title, *sentences]
+    base = next((c for c in candidates if c and is_substantive_claim(c)), None)
+    if base is None:
+        base = news.title or (sentences[0] if sentences else news.body)
     base = mask_pii(base.strip())
     return base if len(base) <= max_len else base[: max_len - 1].rstrip() + "…"
