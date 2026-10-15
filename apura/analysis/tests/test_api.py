@@ -5,11 +5,13 @@ import json
 import threading
 import time
 import uuid
+from copy import deepcopy
 from dataclasses import replace
 from types import SimpleNamespace
-from unittest.mock import patch
+from unittest.mock import Mock, patch
 
 from django.apps import apps
+from django.conf import settings
 from django.core.cache import cache
 from django.db import connection
 from django.test import TestCase
@@ -24,6 +26,7 @@ from analysis.services.classifier import ClassificationResult
 from analysis.services.llm import LLMExplanation
 from analysis.services.scraper import ScrapedArticle
 from analysis.services.timing import Deadline
+from analysis.tests.llm_fixtures import response_envelope, valid_llm_payload
 
 PT_TEXT = (
     "O Ministério da Saúde anunciou nesta segunda-feira uma nova campanha de vacinação "
@@ -203,6 +206,92 @@ class AnalysisApiTests(TestCase):
                     self.assertFalse(body["abstention"])
                     self.assertEqual(body["evidence"]["sources"], [source])
                     self.assertEqual(body["evidence"]["failed"], failed)
+
+    def test_invalid_provider_response_tries_next_provider_before_saving(self):
+        classifier_service.set_classifier(FakeClassifier(0.9))
+        self.groq_patch.stop()
+        self.gemini_patch.stop()
+        invalid = valid_llm_payload()
+        invalid["semantic_comparison"]["consensus_summary"] = 42
+        groq_response = Mock(status_code=200)
+        groq_response.json.return_value = response_envelope(invalid)
+        gemini_response = Mock(status_code=200)
+        gemini_response.json.return_value = response_envelope(valid_llm_payload(), gemini=True)
+        with patch.dict(settings.FAKE_EYES, {"GROQ_API_KEY": "dummy", "GEMINI_API_KEY": "dummy", "OPENAI_API_KEY": ""}), \
+             patch("analysis.services.llm.requests.post", side_effect=[groq_response, gemini_response]) as post:
+            response = self._post({"text": PT_TEXT})
+        self.assertEqual(response.status_code, 201, response.content)
+        self.assertEqual(post.call_count, 2)
+        analysis = Analysis.objects.get(pk=response.json()["id"])
+        self.assertEqual(Analysis.objects.count(), 1)
+        self.assertTrue(analysis.technical["llm_analysis"]["provider"].startswith("Google Gemini"))
+        self.assertEqual(analysis.technical["llm_analysis"]["semantic_comparison"]["consensus_summary"], "Sem conclusão factual")
+        detail = self.client.get(reverse("api-v1:analysis-detail", args=[analysis.id]))
+        self.assertEqual(detail.status_code, 200)
+        self.assertEqual(detail.json()["explanation"], response.json()["explanation"])
+
+    def test_invalid_provider_types_use_local_fallback_and_remain_readable(self):
+        classifier_service.set_classifier(FakeClassifier(0.9))
+        self.groq_patch.stop()
+        self.gemini_patch.stop()
+        self.openai_patch.stop()
+        base = valid_llm_payload()
+        cases = (
+            {**base, "summary": 42}, {**base, "summary": "\ud800"},
+            {**base, "key_points": 42}, {**base, "key_points": "AB"},
+            {**base, "semantic_comparison": {"consensus_status": "nao_verificado", "consensus_summary": 42}},
+            None, [],
+        )
+        for payload in cases:
+            with self.subTest(payload=payload):
+                before = Analysis.objects.count()
+
+                def invalid_response(url, **kwargs):
+                    response = Mock(status_code=200)
+                    response.json.return_value = response_envelope(payload, gemini="googleapis.com" in url)
+                    return response
+
+                with patch.dict(settings.FAKE_EYES, {"GROQ_API_KEY": "dummy", "GEMINI_API_KEY": "dummy", "OPENAI_API_KEY": "dummy"}), \
+                     patch("analysis.services.llm.requests.post", side_effect=invalid_response) as post:
+                    response = self._post({"text": PT_TEXT})
+                self.assertEqual(response.status_code, 201, response.content)
+                self.assertEqual(post.call_count, 3)
+                self.assertEqual(Analysis.objects.count(), before + 1)
+                analysis = Analysis.objects.get(pk=response.json()["id"])
+                saved = analysis.technical["llm_analysis"]
+                self.assertTrue(saved["provider"].startswith("Motor Analítico"))
+                self.assertIsInstance(saved["summary"], str)
+                self.assertTrue(all(isinstance(point, str) for point in saved["key_points"]))
+                detail = self.client.get(reverse("api-v1:analysis-detail", args=[analysis.id]))
+                self.assertEqual(detail.status_code, 200)
+                self.assertEqual(detail.json()["explanation"], response.json()["explanation"])
+
+    def test_legacy_invalid_explanation_is_safe_to_read_without_reprocessing(self):
+        classifier_service.set_classifier(FakeClassifier(0.9))
+        analysis = Analysis.objects.get(pk=self._post({"text": PT_TEXT}).json()["id"])
+        base = valid_llm_payload()
+        for payload in (
+            {**base, "summary": 42}, {**base, "summary": "\ud800"}, {**base, "key_points": "AB"},
+            {**base, "semantic_comparison": {"consensus_summary": 42}},
+            {**base, "lexical_analysis": {"hedging_detected": "false"}},
+        ):
+            with self.subTest(payload=payload):
+                analysis.technical["llm_analysis"] = payload
+                analysis.save(update_fields=["technical"])
+                original = deepcopy(analysis.technical)
+                with patch("analysis.services.llm.synthesize_explanation") as synthesize, \
+                     patch("analysis.services.llm.requests.post") as post:
+                    response = self.client.get(reverse("api-v1:analysis-detail", args=[analysis.id]))
+                self.assertEqual(response.status_code, 200, response.content)
+                body = response.json()
+                self.assertTrue(all(isinstance(item, str) for item in body["explanation"]))
+                self.assertIsNone(body["expert"])
+                self.assertEqual(body["model"]["semantic_comparison"], {})
+                self.assertIn("A explicação complementar salva está indisponível por formato inválido.", body["limitations"])
+                synthesize.assert_not_called()
+                post.assert_not_called()
+                analysis.refresh_from_db()
+                self.assertEqual(analysis.technical, original)
 
     def test_low_risk_result(self):
         classifier_service.set_classifier(FakeClassifier(0.02))

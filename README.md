@@ -319,8 +319,19 @@ Entrada (Texto, Link ou Extensão de Navegador)
 
 ### 3. Síntese Explicativa via LLM ("Por isso e por isso")
 * Cruza a avaliação probabilística da IA com os achados de checagem na internet e os gatilhos de linguagem.
-* Tenta **Google Gemini** (`gemini-2.0-flash`) ou **OpenAI** (`gpt-4o-mini`) quando as respectivas chaves de API estão configuradas. O código lê `GROQ_API_KEY`, mas não implementa uma chamada ao Groq.
+* Tenta **Groq**, **Google Gemini** e **OpenAI**, nessa ordem, quando as respectivas chaves estão configuradas, compartilhando o prazo da etapa.
 * **Fallback Analítico Inteligente:** Caso nenhuma chave esteja configurada ou o serviço externo esteja indisponível, um motor analítico jornalístico determinístico gera a síntese estruturada sem quebrar a experiência do usuário.
+
+A resposta externa precisa cumprir o contrato antes de entrar no pipeline: resumo não vazio,
+lista de pontos textuais, objetos semântico e lexical com tipos corretos, booleanos e valores
+permitidos. Não há conversão automática de números para texto ou de texto para lista. Campos
+opcionais ausentes recebem valores neutros e campos extras são ignorados. Os limites são de
+4.000 caracteres para resumo e detalhes, até 10 pontos de 1.000 caracteres e até 20 termos
+de 200 caracteres. Resposta inválida permite tentar o próximo provedor; sem uma resposta válida
+no prazo, usa-se a síntese local. Somente a explicação aceita chega à persistência.
+
+Ao ler um resultado anterior com explicação estruturalmente inválida, a API omite essa explicação
+complementar e informa a limitação. Essa leitura não chama a IA nem altera o registro salvo.
 
 ---
 
