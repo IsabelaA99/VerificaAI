@@ -24,6 +24,7 @@ from __future__ import annotations
 import hashlib
 import logging
 import math
+import re
 import statistics
 import threading
 import time
@@ -94,9 +95,19 @@ def _is_continuation(token: str) -> bool:
     return token.startswith("##")
 
 
+# Marcadores digitados/colados pelo usuário viram tokens especiais no tokenizer e
+# quebrariam a estrutura título [SEP] subtítulo [SEP] corpo; por isso são removidos.
+_SPECIAL_TOKEN_RE = re.compile(r"\[(?:CLS|SEP|PAD|MASK|UNK)\]")
+
+
+def _strip_special_tokens(text: str) -> str:
+    return _SPECIAL_TOKEN_RE.sub(" ", text or "").strip()
+
+
 def plan_chunks(tokenizer, title: str, subtitle: str, body: str, max_len: int, stride: int) -> ChunkPlan:
     """Gera os trechos de entrada de forma determinística (ver docstring do módulo)."""
     cls_id, sep_id = tokenizer.cls_token_id, tokenizer.sep_token_id
+    title, subtitle, body = (_strip_special_tokens(t) for t in (title, subtitle, body))
 
     prefix_text = f"{title} [SEP] {subtitle} [SEP]".strip()
     prefix_ids = tokenizer(prefix_text, add_special_tokens=False)["input_ids"]

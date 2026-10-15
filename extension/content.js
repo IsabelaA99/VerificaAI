@@ -31,6 +31,19 @@
         const h1Title = document.querySelector('article h1, main h1, h1')?.innerText;
         const title = (ogTitle || h1Title || document.title || '').trim();
 
+        // --- Subtítulo (linha-fina) ---
+        // O modelo V4 foi treinado com "título [SEP] subtítulo [SEP] texto".
+        // Prioridade: linha-fina visível > og:description > meta description.
+        const subtitleEl = document.querySelector(
+            '.content-head__subtitle, .subtitle, .sub-title, .linha-fina, .article-subtitle, ' +
+            '.c-headline__subtitle, .lead, article h2, main h2'
+        );
+        const ogDesc = document.querySelector('meta[property="og:description"]')?.getAttribute('content');
+        const metaDesc = document.querySelector('meta[name="description"]')?.getAttribute('content');
+        let subtitle = (subtitleEl?.innerText || ogDesc || metaDesc || '').trim();
+        if (subtitle === title) subtitle = '';
+        subtitle = subtitle.slice(0, 2000); // max_length do serializer
+
         // --- Clona o body para não modificar a página ao vivo ---
         const clone = document.body.cloneNode(true);
 
@@ -93,13 +106,15 @@
             mainContent = (container.innerText || '').trim();
         }
 
-        // Limita para não ultrapassar o MAX_CHARS do servidor (20.000)
-        if (mainContent.length > 19000) {
-            mainContent = mainContent.slice(0, 19000);
+        // Limita para não ultrapassar o MAX_CHARS do servidor (20.000 somando título + subtítulo + texto)
+        const maxContent = 19000 - title.length - subtitle.length;
+        if (mainContent.length > maxContent) {
+            mainContent = mainContent.slice(0, maxContent);
         }
 
         return {
             title,
+            subtitle,
             content: mainContent,
             url: window.location.href,
         };

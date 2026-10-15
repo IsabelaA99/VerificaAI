@@ -66,7 +66,7 @@ async function runAnalysis() {
             throw new Error(response?.error || 'Falha ao extrair o conteúdo da página.');
         }
 
-        const { title, content, url } = response.data;
+        const { title, subtitle, content, url } = response.data;
 
         if (!content || content.trim().length < 50) {
             throw new Error('O conteúdo desta página é muito curto ou não pôde ser lido. Tente em um artigo completo.');
@@ -82,6 +82,7 @@ async function runAnalysis() {
             body: JSON.stringify({
                 input_type: 'text',
                 title,
+                subtitle,
                 text: content,
                 url,
             }),

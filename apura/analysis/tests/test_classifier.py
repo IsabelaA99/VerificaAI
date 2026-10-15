@@ -60,6 +60,23 @@ class ChunkingTests(SimpleTestCase):
         self.assertTrue(plan.prefix_truncated)
         self.assertTrue(all(len(w) <= 128 for w in plan.windows))
 
+    def test_matches_reference_sep_format(self):
+        # Formato do README do modelo V4: f"{titulo} [SEP] {subtitulo} [SEP] {texto}"
+        for title, sub, body in [
+            ("Título da notícia", "Subtítulo explicativo", "Um texto curto de teste."),
+            ("Título da notícia", "", "Um texto curto de teste."),
+            ("", "", "Um texto curto de teste."),
+        ]:
+            ref = self.tok(f"{title} [SEP] {sub} [SEP] {body}".strip())["input_ids"]
+            plan = plan_chunks(self.tok, title, sub, body, 128, 16)
+            self.assertEqual(plan.windows, [ref])
+
+    def test_literal_special_tokens_in_input_are_neutralized(self):
+        plan = plan_chunks(self.tok, "Título [CLS]", "", "Texto [SEP] colado [SEP] pelo usuário.", 128, 16)
+        window = plan.windows[0]
+        self.assertEqual(window.count(self.tok.sep_token_id), 3)
+        self.assertEqual(window.count(self.tok.cls_token_id), 1)
+
     def test_no_window_starts_with_subword(self):
         plan = plan_chunks(self.tok, "T", "", self._long_body(), 128, 16)
         body_ids = self.tok("" + self._long_body(), add_special_tokens=False)["input_ids"]
