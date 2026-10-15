@@ -146,6 +146,37 @@ describe('RF16: status e índice', () => {
     expect(screen.getByText(/Chance de ser falsa:/)).toBeInTheDocument()
   })
 
+  it('exibe alerta de estilo formal e divergência factual quando a notícia é formal mas diverge do consenso', () => {
+    const { container } = openCached(
+      makeApiAnalysis({
+        status: { code: 'requer_atencao', label: 'Requer atenção' },
+        risk_index: 35,
+        model: {
+          ...makeApiAnalysis().model,
+          fake_probability: 0.001,
+          confidence: 0.999,
+          is_out_of_domain: true,
+          training_scope: 'out_of_domain_disinformation',
+          discourse_type: 'sensacionalismo',
+          discourse_label: 'Sensacionalismo / Apelativo',
+          verdict_tendency: 'alto_risco_falsa',
+          semantic_comparison: {
+            consensus_status: 'diverge_consenso',
+            consensus_summary: 'As alegações divergem da realidade dos fatos apurados.',
+          },
+        },
+      }),
+    )
+    expect(screen.getByText('Fora do Escopo de Treino do Modelo')).toBeInTheDocument()
+    expect(screen.getByText('Sensacionalismo / Apelativo')).toBeInTheDocument()
+    expect(container.querySelector('.model-prob-card__headline')).toHaveTextContent(/99,9% de estilo formal/)
+    expect(container.querySelector('.model-prob-card__discrepant-badge')).toHaveTextContent('(conteúdo contestado)')
+    expect(screen.getByText(/Padrão de escrita formal:/)).toBeInTheDocument()
+    expect(screen.getByText('Diverge do Consenso')).toBeInTheDocument()
+    expect(screen.getByText('As alegações divergem da realidade dos fatos apurados.')).toBeInTheDocument()
+    expect(screen.getByText(/Não confie apenas no estilo de escrita/)).toBeInTheDocument()
+  })
+
   it('análise inconclusiva: sem índice, sem escala, e diz que não é veredito', () => {
     openCached(apiInconclusive())
     expect(screen.getByRole('heading', { level: 2, name: 'Análise inconclusiva' })).toBeInTheDocument()

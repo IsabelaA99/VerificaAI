@@ -53,6 +53,7 @@ export const SUPPORTED_API_VERSIONS = Object.freeze(['v1'])
  *   isOutOfDomain: boolean,
  *   trainingScope: string | null,
  *   uncertaintyWarning: string | null,
+ *   verdictTendency: string | null,
  *   semanticComparison: { consensus_status: string, consensus_summary: string } | null,
  *   lexicalAnalysis: { hedging_terms: string[] } | null,
  * }} ModelInfo
@@ -225,6 +226,7 @@ function normalizeModel(raw) {
     isOutOfDomain: m.is_out_of_domain === true,
     trainingScope: asString(m.training_scope) || null,
     uncertaintyWarning: asString(m.uncertainty_warning) || null,
+    verdictTendency: asString(m.verdict_tendency) || null,
     semanticComparison: semantic
       ? { consensus_status: asString(semantic.consensus_status), consensus_summary: asString(semantic.consensus_summary) }
       : null,

@@ -133,8 +133,21 @@ def _execute_pipeline(
     has_conflicting = any(s.get("relation") == "conflicting" for s in fact_res.get("sources", []))
     is_satire = (discourse_type == "satira") or llm.is_satirical_domain(source_domain)
 
-    # Identifica conteúdo factual em-domínio: imprensa tradicional ou texto com alta probabilidade/confiança factual
-    is_in_domain_factual = (is_traditional or (cls.fake_probability < 0.25 and cls.confidence > 0.80)) and not is_satire and discourse_type != "teoria_conspiratoria"
+    # Identifica conteúdo factual em-domínio: exclusivamente imprensa tradicional sem conflitos
+    # ou texto sem qualquer sinal de divergência de consenso, sensacionalismo ou teorias conspiratórias.
+    verdict_tendency = getattr(llm_res, "verdict_tendency", "")
+    has_discrepant_risk = bool(
+        has_conflicting or
+        discourse_type in ("teoria_conspiratoria", "conspiracy_or_theoretical", "satira", "sensacionalismo") or
+        (consensus_status == "diverge_consenso" and verdict_tendency != "inconclusiva") or
+        verdict_tendency == "alto_risco_falsa"
+    )
+
+    is_in_domain_factual = bool(
+        (is_traditional or (cls.fake_probability < 0.25 and cls.confidence > 0.80))
+        and not is_satire
+        and not has_discrepant_risk
+    )
 
     if is_in_domain_factual and not has_conflicting:
         consensus_status = "conforme_consenso"
@@ -160,9 +173,10 @@ def _execute_pipeline(
     else:
         status = risk.status_for_index(risk_info["value"], rules)
 
-    # Salvaguarda epistemológica: aplicada EXCLUSIVAMENTE para teorias conspiratórias reais fora de domínio,
-    # sátiras/paródias fictícias ou matérias com checagem conflitante comprovada. NUNCA sobrepor matérias factuais.
-    if not is_in_domain_factual and (has_conflicting or discourse_type in ("teoria_conspiratoria", "conspiracy_or_theoretical", "satira")):
+    # Salvaguarda epistemológica: matérias fora de domínio factual que divergem do consenso,
+    # propagam sensacionalismo, conspiração ou possuem checagem conflitante NUNCA podem
+    # receber "poucos sinais de risco" apenas pela redação culta/formal.
+    if not is_in_domain_factual and has_discrepant_risk:
         if status == risk.STATUS_LOW:
             status = risk.STATUS_ATTENTION
             if risk_info["value"] is not None and risk_info["value"] <= rules.low_max:
@@ -170,14 +184,16 @@ def _execute_pipeline(
 
     is_out_of_domain = bool(
         not is_in_domain_factual and (
-            discourse_type in ("teoria_conspiratoria", "conspiracy_or_theoretical", "satira") or
-            (consensus_status == "diverge_consenso" and cls.fake_probability < 0.35 and (has_conflicting or discourse_type == "satira"))
+            has_discrepant_risk or
+            (consensus_status == "diverge_consenso" and cls.fake_probability < 0.35)
         )
     )
     if discourse_type == "satira":
         training_scope = "out_of_domain_satire"
-    elif is_out_of_domain:
+    elif discourse_type in ("teoria_conspiratoria", "conspiracy_or_theoretical"):
         training_scope = "out_of_domain_conspiracy"
+    elif is_out_of_domain:
+        training_scope = "out_of_domain_disinformation"
     elif is_traditional:
         training_scope = "in_domain_press"
     else:

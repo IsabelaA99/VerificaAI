@@ -603,6 +603,19 @@
   border: 1px solid var(--color-border);
 }
 
+.model-prob-card__discrepant-badge {
+  display: inline-block;
+  font-size: var(--text-small);
+  font-weight: var(--weight-bold);
+  color: var(--tone-high-fg);
+  background: var(--tone-high-bg);
+  padding: 2px var(--space-2);
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--tone-high-border);
+  vertical-align: middle;
+  margin-left: var(--space-1);
+}
+
 .model-prob-card__subheadline {
   margin: var(--space-1) 0 0;
   font-size: var(--text-small);

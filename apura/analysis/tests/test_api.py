@@ -544,3 +544,32 @@ class AnalysisApiTests(TestCase):
         resp = self.client.get(reverse("api-v1:health"))
         self.assertEqual(resp.status_code, 200)
         self.assertEqual(resp.json()["rules_version"], "rules-v1.0.0")
+
+    def test_formal_fake_news_with_consensus_divergence_triggers_safeguard(self):
+        classifier_service.set_classifier(FakeClassifier(0.0007))
+        explanation = LLMExplanation(
+            summary="Afirmações incorretas",
+            key_points=["Guerra inexistente"],
+            provider="Groq (teste)",
+            verdict_tendency="alto_risco_falsa",
+            discourse_type="sensacionalismo",
+            discourse_label="Sensacionalismo / Apelativo",
+            semantic_comparison={
+                "consensus_status": "diverge_consenso",
+                "consensus_summary": "Fatos divergem da realidade histórica.",
+            },
+        )
+        with patch("analysis.services.pipeline.factcheck.search_fact_checks", return_value={
+            "status": "none", "sources": [], "conflict_score": None, "failed": False,
+        }), patch("analysis.services.pipeline.llm.synthesize_explanation", return_value=explanation):
+            response = self._post({"text": "Texto formal com dados falsos sobre guerra inexistente e hospitalização."})
+        self.assertEqual(response.status_code, 201)
+        body = response.json()
+        self.assertEqual(body["status"]["code"], "requer_atencao")
+        self.assertEqual(body["risk_index"], 35.0)
+        self.assertTrue(body["model"]["is_out_of_domain"])
+        self.assertEqual(body["model"]["training_scope"], "out_of_domain_disinformation")
+        self.assertEqual(body["model"]["discourse_type"], "sensacionalismo")
+        self.assertEqual(body["model"]["verdict_tendency"], "alto_risco_falsa")
+        self.assertEqual(body["model"]["semantic_comparison"]["consensus_status"], "diverge_consenso")
+
