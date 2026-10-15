@@ -138,7 +138,8 @@ Quando o usuário cola um texto único no formulário sem preencher campos separ
 Para processar matérias longas (até o limite de 20.000 caracteres) sem perda de contexto:
 * O corpo é fatiado em janelas com sobreposição (*stride*) de tokens.
 * Os cortes são alinhados ao início de palavras inteiras (nenhuma janela se inicia com sub-palavras `##`).
-* Todas as janelas são processadas pelo modelo e agregadas via média aritmética das probabilidades $P(\text{falsa})$.
+* Apenas a **primeira janela** é pontuada pelo modelo, o mesmo que a inferência de referência do [repositório do modelo](https://github.com/oficialmarlonmd/DataScience-Trainfakenews-model) (entrada truncada em 128 tokens). No treino da V4, as notícias verdadeiras foram fatiadas em trechos tirados do meio do texto e as falsas entraram inteiras; por isso o modelo classifica como "verdadeira" qualquer janela que não começa no início do corpo, mesmo em notícias falsas. A média entre janelas derrubava a acurácia no teste cego de 100 notícias do modelo de 98% para 87%.
+* Quando o texto não cabe em uma janela, `fully_analyzed` é `false` e o resultado informa que parte do conteúdo não foi analisada.
 
 ---
 
@@ -148,9 +149,9 @@ Para processar matérias longas (até o limite de 20.000 caracteres) sem perda d
 
 ### 1. Métricas do Modelo
 
-* **`fake_probability`:** Média de $P(\text{falsa})$ entre todos os trechos analisados (0.0 a 1.0).
+* **`fake_probability`:** $P(\text{falsa})$ da primeira janela da matéria (0.0 a 1.0).
 * **`confidence`:** Distância da incerteza, dada por $\max(p, 1 - p)$.
-* **`chunk_disagreement`:** Desvio-padrão das probabilidades entre as diferentes janelas da matéria.
+* **`chunk_disagreement`:** Desvio-padrão das probabilidades entre as janelas pontuadas; com uma única janela pontuada, é sempre 0.
 
 ### 2. Regra de Abstenção Estatística (RF14)
 
@@ -428,7 +429,7 @@ Header: X-Client-Source: browser-extension
     "tokens_analyzed": 58,
     "tokens_total": 58,
     "fully_analyzed": true,
-    "aggregation": "mean"
+    "aggregation": "first_window"
   },
   "risk": {
     "value": 88.5,

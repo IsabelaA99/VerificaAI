@@ -21,7 +21,7 @@
     "temperature": 1.0,
     "calibrated": false
   },
-  "chunk_aggregation": "mean_fake_probability",
+  "chunk_aggregation": "first_window",
   "linguistic": {
     "caps_ratio_saturation": 0.3,
     "exclamation_per_100_words_saturation": 3.0,

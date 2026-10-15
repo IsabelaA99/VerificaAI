@@ -71,6 +71,16 @@ class ChunkingTests(SimpleTestCase):
             plan = plan_chunks(self.tok, title, sub, body, 128, 16)
             self.assertEqual(plan.windows, [ref])
 
+    def test_first_window_matches_reference_truncation(self):
+        # Só a primeira janela é pontuada: deve ser a entrada da referência truncada
+        # em 128 tokens, mesmo com o corte no meio de "Pará ##grafo".
+        title, sub = "Título da notícia", "Subtítulo"
+        body = self._long_body().split(" ", 1)[1]
+        ref = self.tok(f"{title} [SEP] {sub} [SEP] {body}", truncation=True, max_length=128)["input_ids"]
+        plan = plan_chunks(self.tok, title, sub, body, 128, 16)
+        self.assertEqual(self.tok.convert_ids_to_tokens(ref[-2:]), ["Pará", "[SEP]"])
+        self.assertEqual(plan.windows[0], ref)
+
     def test_literal_special_tokens_in_input_are_neutralized(self):
         plan = plan_chunks(self.tok, "Título [CLS]", "", "Texto [SEP] colado [SEP] pelo usuário.", 128, 16)
         window = plan.windows[0]
@@ -108,3 +118,24 @@ class RealModelTests(SimpleTestCase):
         a, b = self.clf.classify(*args), self.clf.classify(*args)
         self.assertAlmostEqual(a.fake_probability, b.fake_probability, places=4)
         self.assertTrue(a.model_sha256)
+
+    def test_long_text_matches_reference_truncation(self):
+        # Inferência de referência do V4 (tests/test_model_v4_accuracy.py do repositório
+        # do modelo): f"{titulo} [SEP] {subtitulo} [SEP] {texto}" truncado em 128 tokens.
+        title = "Governo vai confiscar a poupança de todos os brasileiros"
+        subtitle = "Mensagem diz que os bancos já receberam a ordem"
+        body = " ".join(["O governo vai tirar o dinheiro de todos os brasileiros e ninguém fala nada sobre isso."] * 15)
+        res = self.clf.classify(title, subtitle, body)
+
+        torch = self.clf._torch
+        inputs = self.clf.tokenizer(
+            f"{title} [SEP] {subtitle} [SEP] {body}", truncation=True, max_length=128, return_tensors="pt"
+        ).to(self.clf.device)
+        with torch.inference_mode():
+            ref = torch.softmax(self.clf.model(**inputs).logits.float(), dim=-1)[0, self.clf.fake_index].item()
+
+        self.assertAlmostEqual(res.fake_probability, ref, places=4)
+        self.assertEqual(res.chunks_analyzed, 1)
+        self.assertGreater(res.chunks_total, 1)
+        self.assertLess(res.tokens_analyzed, res.tokens_total)
+        self.assertFalse(res.fully_analyzed)

@@ -10,13 +10,17 @@ Estratégia para textos longos (RF12) — documentada e determinística:
    truncado em MAX_LEN/2 tokens e isso é sinalizado (``prefix_truncated``).
 3. O corpo é dividido em janelas de tokens que cabem no orçamento restante, com
    sobreposição de ``CHUNK_STRIDE`` tokens e cortes alinhados ao início de
-   palavras (nunca começando por sub-palavra ``##``).
-4. TODAS as janelas são analisadas (o limite de 5.000 caracteres do RF01 garante
-   um número pequeno de janelas). Se algum dia o limite ``MAX_CHUNKS`` for
-   excedido, a seleção é: primeira, última e janelas igualmente espaçadas, e a
-   fração não analisada é informada em ``tokens_analyzed``/``tokens_total``.
-5. Agregação: média aritmética de P(falsa) entre as janelas. A dispersão
-   (desvio-padrão) é reportada para a regra de abstenção.
+   palavras (nunca começando por sub-palavra ``##``), exceto o fim da primeira
+   janela, que é cortado como no truncamento da referência.
+4. Apenas a PRIMEIRA janela é pontuada — o mesmo que a inferência de referência
+   do modelo (entrada truncada em MAX_LEN). No treino da V4, as verdadeiras foram
+   fatiadas em trechos de ~35 palavras tirados do meio do texto, enquanto as
+   falsas entraram sempre inteiras, a partir do início. Por isso o modelo dá
+   P(verdadeira) alta a qualquer janela que não começa no início do corpo, mesmo
+   em notícias falsas (média de 0,82 nas 50 falsas do teste cego do repositório
+   do modelo), e a média entre janelas derrubava a acurácia de 98% para 87%.
+   A fração não analisada é informada em ``tokens_analyzed``/``tokens_total``.
+5. Agregação: P(falsa) da primeira janela; ``chunk_disagreement`` fica 0.
 """
 
 from __future__ import annotations
@@ -129,7 +133,9 @@ def plan_chunks(tokenizer, title: str, subtitle: str, body: str, max_len: int, s
     start = 0
     while start < n:
         end = min(start + budget, n)
-        if end < n:
+        # A primeira janela (a única pontuada) é o truncamento exato da referência:
+        # recuar o corte muda o resultado do modelo (até 0,45 em P(falsa)).
+        if 0 < start and end < n:
             # Recuar o corte para o início de uma palavra, sem encolher demais a janela.
             adj = end
             while adj > start + budget // 2 and _is_continuation(body_tokens[adj]):
@@ -255,11 +261,14 @@ class BertFakeNewsClassifier:
         torch = self._torch
         started = time.perf_counter()
         plan = plan_chunks(self.tokenizer, title, subtitle, body, self.max_len, self.stride)
+        # Só a primeira janela tem sinal confiável no V4 (ver docstring do módulo, item 4).
+        windows = plan.windows[:1]
+        body_start, body_end = plan.body_spans[0]
 
-        width = max(len(w) for w in plan.windows)
+        width = max(len(w) for w in windows)
         pad_id = self.tokenizer.pad_token_id or 0
-        input_ids = [w + [pad_id] * (width - len(w)) for w in plan.windows]
-        attention = [[1] * len(w) + [0] * (width - len(w)) for w in plan.windows]
+        input_ids = [w + [pad_id] * (width - len(w)) for w in windows]
+        attention = [[1] * len(w) + [0] * (width - len(w)) for w in windows]
 
         with self._lock, torch.inference_mode():
             ids_t = torch.tensor(input_ids, device=self.device)
@@ -284,11 +293,11 @@ class BertFakeNewsClassifier:
             chunk_fake_probabilities=[round(p, 6) for p in chunk_probs],
             chunk_disagreement=round(disagreement, 6),
             chunks_total=plan.chunks_total,
-            chunks_analyzed=len(plan.windows),
+            chunks_analyzed=len(windows),
             tokens_total=plan.tokens_total,
-            tokens_analyzed=plan.tokens_analyzed,
+            tokens_analyzed=body_end - body_start,
             prefix_truncated=plan.prefix_truncated,
-            aggregation="mean_fake_probability",
+            aggregation="first_window",
             model_version=self.version,
             model_sha256=self.sha256,
             device=str(self.device),
