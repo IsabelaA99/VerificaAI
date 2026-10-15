@@ -65,6 +65,7 @@ regras de risco, abstenção e rastreabilidade de versões.
 - [x] Síntese explicativa contextual via LLM (Gemini / OpenAI / Síntese Neural) explicando "por isso e por isso"
 - [x] Ativação do sinal `evidence_conflict` no cálculo do índice de risco ponderado
 - [x] T02: somente fontes verificadas fornecem `evidence_conflict` e satisfazem a regra de evidência mínima; síntese e fontes contextuais não substituem evidência
+- [x] T03: validação estrutural da resposta de IA antes da persistência, fallback para resposta inválida e leitura segura de explicações antigas fora do contrato
 
 ## Etapa 4 — Contas, limite de visitante e histórico
 - [ ] Cadastro, login, logout seguros (RF31, RNF18)

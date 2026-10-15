@@ -2,11 +2,16 @@
 
 from __future__ import annotations
 
+from copy import copy
+
 from rest_framework import serializers
 
 from ..models import Analysis
 from ..services import risk
+from ..services.llm_schema import InvalidLLMResponse, validate_llm_payload
 from ..services.privacy import sanitize_analysis_data
+
+INVALID_SAVED_EXPLANATION = "A explicação complementar salva está indisponível por formato inválido."
 
 RECOMMENDATIONS = [
     "Procure a fonte original da informação antes de compartilhar.",
@@ -109,6 +114,24 @@ class AnalysisResultSerializer(serializers.ModelSerializer):
         ]
 
     def to_representation(self, instance):
+        technical = dict(instance.technical or {})
+        if "llm_analysis" in technical:
+            saved_explanation = technical["llm_analysis"]
+            try:
+                safe_explanation = validate_llm_payload(saved_explanation, check_limits=False)
+            except InvalidLLMResponse:
+                # Leitura de legado: não reprocessa nem altera o registro salvo.
+                technical.pop("llm_analysis")
+                limitations = technical.get("limitations")
+                technical["limitations"] = [
+                    *(limitations if isinstance(limitations, list) else []), INVALID_SAVED_EXPLANATION,
+                ]
+            else:
+                provider = saved_explanation.get("provider", "")
+                safe_explanation["provider"] = provider if isinstance(provider, str) else ""
+                technical["llm_analysis"] = safe_explanation
+            instance = copy(instance)
+            instance.technical = technical
         # Também protege registros criados antes do mascaramento na persistência.
         return sanitize_analysis_data(super().to_representation(instance))
 

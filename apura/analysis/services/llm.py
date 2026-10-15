@@ -20,6 +20,7 @@ from typing import Any
 import requests
 from django.conf import settings
 
+from .llm_schema import validate_llm_payload
 from .preprocessing import mask_pii
 from .timing import Deadline, DeadlineExceeded, ServiceBusy
 
@@ -149,19 +150,14 @@ def is_satirical_domain(domain: str) -> bool:
 
 
 def _parse_llm_json(parsed: dict[str, Any], provider: str, source_domain: str = "") -> LLMExplanation:
-    semantic = parsed.get("semantic_comparison")
-    if not isinstance(semantic, dict):
-        semantic = {
-            "claim_analyzed": parsed.get("summary", "")[:100],
-            "consensus_status": "conforme_consenso",
-            "consensus_summary": str(semantic or "Compatível com a cobertura factual da imprensa tradicional."),
-        }
-    lexical = parsed.get("lexical_analysis")
-    if not isinstance(lexical, dict):
-        lexical = {}
+    # O erro de contrato é capturado pelo provedor, permitindo tentar outro ou
+    # recorrer à síntese local antes que qualquer conteúdo inválido seja salvo.
+    parsed = validate_llm_payload(parsed)
+    semantic = parsed["semantic_comparison"]
+    lexical = parsed["lexical_analysis"]
 
-    summary_lower = str(parsed.get("summary", "")).lower()
-    discourse_raw = str(parsed.get("discourse_type", "factual")).lower()
+    summary_lower = parsed["summary"].lower()
+    discourse_raw = parsed["discourse_type"].lower()
     is_traditional = is_traditional_press_domain(source_domain) and not is_satirical_domain(source_domain)
 
     if (
