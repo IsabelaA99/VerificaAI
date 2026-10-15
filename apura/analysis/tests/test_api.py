@@ -4,6 +4,7 @@ import importlib
 import json
 import threading
 import time
+import uuid
 from types import SimpleNamespace
 from unittest.mock import patch
 
@@ -200,6 +201,75 @@ class AnalysisApiTests(TestCase):
         resp = self.client.get(reverse("api-v1:analysis-detail", args=[created["id"]]))
         self.assertEqual(resp.status_code, 200)
         self.assertEqual(resp.json()["id"], created["id"])
+
+    def test_numeric_uuid_and_model_metadata_survive_post_and_get(self):
+        analysis_id = uuid.UUID("00000000-0000-4000-8000-5252043214c0")
+        model_hash = "ab5252043214cd" + "a" * 50
+        model_version = "model-5252043214"
+
+        class NumericMetadataClassifier(FakeClassifier):
+            def classify(self, *args, **kwargs):
+                result = super().classify(*args, **kwargs)
+                result.model_sha256 = model_hash
+                result.model_version = model_version
+                return result
+
+        classifier_service.set_classifier(NumericMetadataClassifier(0.9))
+        with patch.object(Analysis._meta.get_field("id"), "get_default", return_value=analysis_id):
+            response = self._post({"text": PT_TEXT})
+        self.assertEqual(response.status_code, 201, response.content)
+        created = response.json()
+        self.assertEqual(created["id"], str(analysis_id))
+        self.assertEqual(created["versions"]["model_sha256"], model_hash)
+        self.assertEqual(created["versions"]["model"], model_version)
+        analysis = Analysis.objects.get(pk=analysis_id)
+        self.assertEqual(analysis.technical["classification"]["model_sha256"], model_hash)
+        self.assertEqual(analysis.technical["classification"]["model_version"], model_version)
+
+        detail = self.client.get(reverse("api-v1:analysis-detail", args=[created["id"]]))
+        self.assertEqual(detail.status_code, 200)
+        self.assertEqual(detail.json()["id"], str(analysis_id))
+        self.assertEqual(detail.json()["versions"], created["versions"])
+
+    def test_repair_migration_restores_canonical_metadata_without_unmasking_text(self):
+        classifier_service.set_classifier(FakeClassifier(0.9))
+        analysis = Analysis.objects.get(pk=self._post({"text": PT_TEXT}).json()["id"])
+        analysis.model_version = "model-5252043214"
+        analysis.model_sha256 = "ab5252043214cd" + "a" * 50
+        analysis.rules_version = "rules-5252043214"
+        analysis.calibrator_version = "cal-5252043214"
+        original = {
+            "classification": {"model_version": analysis.model_version, "model_sha256": analysis.model_sha256},
+            "rules": {"version": analysis.rules_version},
+            "calibrator": {"version": analysis.calibrator_version},
+            "llm_analysis": {"summary": "Contato maria@exemplo.com"},
+        }
+        legacy = importlib.import_module("analysis.migrations.0002_mask_legacy_analysis_data")
+        analysis.technical = legacy.sanitize(original)
+        self.assertNotEqual(analysis.technical["classification"]["model_sha256"], analysis.model_sha256)
+        analysis.save(update_fields=[
+            "model_version", "model_sha256", "rules_version", "calibrator_version", "technical",
+        ])
+
+        incomplete = Analysis.objects.get(pk=self._post({"text": PT_TEXT}).json()["id"])
+        incomplete.technical = {"classification": {"label": "verdadeira"}, "rules": {"version": "historic-version"}}
+        incomplete.save(update_fields=["technical"])
+
+        migration = importlib.import_module("analysis.migrations.0003_restore_technical_metadata")
+        migration.restore_technical_metadata(apps, SimpleNamespace(connection=connection))
+        analysis.refresh_from_db()
+        self.assertEqual(analysis.technical["classification"], original["classification"])
+        self.assertEqual(analysis.technical["rules"], original["rules"])
+        self.assertEqual(analysis.technical["calibrator"], original["calibrator"])
+        self.assertEqual(analysis.technical["llm_analysis"]["summary"], "Contato [e-mail removido]")
+        incomplete.refresh_from_db()
+        self.assertEqual(incomplete.technical, {
+            "classification": {"label": "verdadeira"}, "rules": {"version": "historic-version"},
+        })
+        repaired = analysis.technical
+        migration.restore_technical_metadata(apps, SimpleNamespace(connection=connection))
+        analysis.refresh_from_db()
+        self.assertEqual(analysis.technical, repaired)
 
     def test_validation_error_structure(self):
         classifier_service.set_classifier(FakeClassifier(0.9))
