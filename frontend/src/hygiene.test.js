@@ -123,7 +123,8 @@ describe('armazenamento e rede passam por um só módulo', () => {
   })
 
   it('só os endereços de exemplo e o link do WhatsApp aparecem como http(s)://', () => {
-    const allowed = new Set(['http://', 'https://', 'https://exemplo.com/noticia', 'https://wa.me/5511999999999'])
+    // O número do WhatsApp vem da configuração (VITE_WHATSAPP_NUMBER); no código, só o endereço do wa.me
+    const allowed = new Set(['http://', 'https://', 'https://exemplo.com/noticia', 'https://wa.me/'])
     const found = []
     for (const file of FILES) {
       for (const { text, number } of codeLines(file.source)) {

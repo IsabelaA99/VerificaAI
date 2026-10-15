@@ -15,8 +15,17 @@ import { RESPONSE_DEADLINE_MS } from './domain/limits.js'
  *   accountsMode: FeatureMode,
  *   feedbackMode: FeatureMode,
  *   backend: { urlAnalysis: boolean, sources: boolean },
+ *   whatsapp: { number: string, joinCode: string },
  * }} AppConfig
  */
+
+// Chatbot no sandbox da Twilio: o número é o do sandbox (o mesmo para todas as contas) e o código
+// "join …" é o da conta que roda o chatbot. Com um número oficial, o código fica vazio.
+const WHATSAPP_SANDBOX_NUMBER = '14155238886'
+const WHATSAPP_SANDBOX_JOIN_CODE = 'join division-facing'
+
+/** Só os dígitos, no formato que o wa.me espera (código do país, sem "+"). @param {string | undefined} value */
+const toPhoneDigits = (value) => (value ?? '').replace(/\D/g, '')
 
 /** @param {string | undefined} value @param {boolean} fallback */
 const toBool = (value, fallback) => (value === undefined || value === '' ? fallback : value === 'true')
@@ -47,6 +56,11 @@ export function createConfig(env = import.meta.env) {
       urlAnalysis: toBool(env.VITE_BACKEND_URL_ANALYSIS, true),
       sources: toBool(env.VITE_BACKEND_SOURCES, true),
     },
+    whatsapp: Object.freeze({
+      number: toPhoneDigits(env.VITE_WHATSAPP_NUMBER) || WHATSAPP_SANDBOX_NUMBER,
+      // Ausente: o código do sandbox. Vazio: número oficial, sem "join" (o link abre direto a conversa).
+      joinCode: (env.VITE_WHATSAPP_JOIN_CODE ?? WHATSAPP_SANDBOX_JOIN_CODE).trim(),
+    }),
   })
 }
 

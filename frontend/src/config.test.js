@@ -12,6 +12,23 @@ describe('createConfig', () => {
       accountsMode: 'demo',
       feedbackMode: 'demo',
       backend: { urlAnalysis: true, sources: true },
+      whatsapp: { number: '14155238886', joinCode: 'join division-facing' },
+    })
+  })
+
+  describe('chatbot do WhatsApp', () => {
+    it('guarda só os dígitos do número, no formato do wa.me', () => {
+      expect(createConfig({ VITE_WHATSAPP_NUMBER: '+55 (11) 3333-4444' }).whatsapp.number).toBe('551133334444')
+    })
+
+    it('número vazio ou sem dígitos volta ao do sandbox', () => {
+      expect(createConfig({ VITE_WHATSAPP_NUMBER: '' }).whatsapp.number).toBe('14155238886')
+      expect(createConfig({ VITE_WHATSAPP_NUMBER: 'abc' }).whatsapp.number).toBe('14155238886')
+    })
+
+    it('código vazio significa número oficial, sem "join"', () => {
+      expect(createConfig({ VITE_WHATSAPP_JOIN_CODE: '' }).whatsapp.joinCode).toBe('')
+      expect(createConfig({ VITE_WHATSAPP_JOIN_CODE: '  join outra-conta ' }).whatsapp.joinCode).toBe('join outra-conta')
     })
   })
 
