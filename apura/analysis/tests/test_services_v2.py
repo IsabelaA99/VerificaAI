@@ -3,6 +3,7 @@ Testes dos serviços de raspagem, checagem de fatos e síntese LLM.
 """
 
 from unittest.mock import MagicMock, patch
+import requests
 from django.test import SimpleTestCase
 
 from analysis.services.factcheck import _claim_match_level, _extract_query_keywords, search_fact_checks
@@ -139,6 +140,56 @@ class FactCheckTests(SimpleTestCase):
             self.assertEqual(res["status"], "found")
             self.assertEqual(len(res["sources"]), 1)
             self.assertEqual(res["conflict_score"], 1.0)
+
+    @patch("analysis.services.factcheck.requests.get")
+    def test_http_errors_are_failures_not_empty_searches(self, request_get):
+        request_get.return_value.status_code = 503
+        with patch.dict("django.conf.settings.FAKE_EYES", {"GOOGLE_FACT_CHECK_API_KEY": "dummy-key"}):
+            result = search_fact_checks("Vacina causa autismo")
+        self.assertEqual(result["status"], "none")
+        self.assertTrue(result["failed"])
+        self.assertEqual(result["sources"], [])
+
+    @patch("analysis.services.factcheck._search_fact_check_fallback", return_value=[])
+    @patch("analysis.services.factcheck.requests.get")
+    def test_network_and_invalid_json_are_reported_as_failures(self, request_get, fallback):
+        with patch.dict("django.conf.settings.FAKE_EYES", {"GOOGLE_FACT_CHECK_API_KEY": "dummy-key"}):
+            request_get.side_effect = requests.ConnectionError("offline")
+            self.assertTrue(search_fact_checks("Vacina causa autismo")["failed"])
+            request_get.side_effect = None
+            request_get.return_value.status_code = 200
+            request_get.return_value.json.side_effect = ValueError("invalid JSON")
+            self.assertTrue(search_fact_checks("Vacina causa autismo")["failed"])
+        self.assertEqual(fallback.call_count, 2)
+
+    @patch("analysis.services.factcheck._search_wikipedia", return_value=[])
+    @patch("analysis.services.factcheck._search_boatos", return_value=[])
+    @patch("analysis.services.factcheck._search_comprova", return_value=[])
+    @patch("analysis.services.factcheck._search_google_fact_check", return_value=[])
+    def test_completed_search_without_results_is_not_a_failure(self, mock_gfc, comprova, boatos, wiki):
+        with patch.dict("django.conf.settings.FAKE_EYES", {"GOOGLE_FACT_CHECK_API_KEY": "dummy-key"}):
+            result = search_fact_checks("Vacina causa autismo")
+        self.assertEqual(result["status"], "none")
+        self.assertFalse(result["failed"])
+        mock_gfc.assert_called_once()
+        comprova.assert_called_once()
+        boatos.assert_called_once()
+        wiki.assert_called_once()
+
+    @patch("analysis.services.factcheck._search_wikipedia", return_value=[])
+    @patch("analysis.services.factcheck._search_boatos", return_value=None)
+    @patch("analysis.services.factcheck._search_comprova")
+    def test_partial_fallback_keeps_sources_and_reports_failure(self, comprova, boatos, wiki):
+        comprova.return_value = [{
+            "url": "https://example.org/checagem", "title": "É falso que vacina causa autismo",
+            "relation": "conflicting", "publisher": "Projeto Comprova",
+        }]
+        with patch.dict("django.conf.settings.FAKE_EYES", {"GOOGLE_FACT_CHECK_API_KEY": ""}):
+            result = search_fact_checks("Vacina causa autismo")
+        self.assertEqual(result["status"], "found")
+        self.assertTrue(result["failed"])
+        self.assertEqual(len(result["sources"]), 1)
+        self.assertEqual(result["conflict_score"], 1.0)
 
     def test_claim_match_requires_same_terms_order_polarity_and_numbers(self):
         self.assertEqual(_claim_match_level("Vacina causa autismo", "Vacina causa autismo"), "same")

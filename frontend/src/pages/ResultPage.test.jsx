@@ -298,46 +298,23 @@ describe('RF07, RF08, RF27: fontes e evidências', () => {
     expect(within(section()).getByRole('article')).toHaveTextContent(label)
   })
 
-  it('falha na consulta (RF27, cenário 6): a análise continua, limitada, com botão para tentar de novo', async () => {
+  it('falha na consulta (RF27, cenário 6): mantém o resultado e oferece nova análise', () => {
     const failed = makeApiAnalysis({ evidence: { enabled: true, sources: [], failed: true } })
     openCached(failed)
-    expect(section()).toHaveTextContent('Não foi possível consultar as fontes.')
-    expect(section()).toHaveTextContent('A análise abaixo considera só o texto enviado e por isso é limitada')
+    expect(section()).toHaveTextContent('Não foi possível consultar todas as fontes.')
+    expect(section()).toHaveTextContent('O resultado pode estar incompleto.')
     // O resultado continua na tela.
     expect(screen.getByRole('heading', { level: 2, name: 'Requer atenção' })).toBeInTheDocument()
-    expect(within(section()).getByRole('button', { name: 'Tentar de novo' })).toBeEnabled()
+    expect(within(section()).getByRole('link', { name: 'Iniciar nova análise' })).toHaveAttribute('href', '/')
+    expect(section()).not.toHaveTextContent('Nenhuma fonte relevante foi encontrada')
   })
 
-  it('"Tentar de novo" busca o resultado outra vez e mostra as fontes quando elas chegam', async () => {
-    const failed = makeApiAnalysis({ evidence: { enabled: true, sources: [], failed: true } })
-    const recovered = makeApiAnalysis({ evidence: { enabled: true, sources: [SOURCE] } })
-    const fetchImpl = vi.fn(async () => jsonResponse(recovered))
-    openCached(failed, { fetchImpl })
-    await userEvent.click(within(section()).getByRole('button', { name: 'Tentar de novo' }))
-    expect(await within(section()).findByRole('article')).toHaveTextContent('Prefeitura confirma novos horários')
-    expect(fetchImpl).toHaveBeenCalledTimes(1)
-    expect(String(fetchImpl.mock.calls[0][0])).toMatch(new RegExp(`/api/v1/analyses/${ID}/$`))
-    expect(within(section()).queryByRole('button', { name: 'Tentar de novo' })).not.toBeInTheDocument()
-  })
-
-  it('"Tentar de novo" com as fontes ainda fora do ar: avisa e mantém a análise limitada', async () => {
-    const failed = makeApiAnalysis({ evidence: { enabled: true, sources: [], failed: true } })
-    const fetchImpl = vi.fn(async () => jsonResponse(failed))
-    openCached(failed, { fetchImpl })
-    await userEvent.click(within(section()).getByRole('button', { name: 'Tentar de novo' }))
-    expect(await screen.findByText('As fontes ainda não estão disponíveis. A análise continua limitada.')).toBeInTheDocument()
-    expect(section()).toHaveTextContent('Não foi possível consultar as fontes.')
-  })
-
-  it('"Tentar de novo" sem conexão: avisa, e o resultado atual continua na tela', async () => {
-    const failed = makeApiAnalysis({ evidence: { enabled: true, sources: [], failed: true } })
-    const fetchImpl = vi.fn(async () => {
-      throw new TypeError('Failed to fetch')
-    })
-    openCached(failed, { fetchImpl })
-    await userEvent.click(within(section()).getByRole('button', { name: 'Tentar de novo' }))
-    expect(await screen.findByText('Não foi possível atualizar agora. Tente de novo em instantes.')).toBeInTheDocument()
-    expect(screen.getByRole('heading', { level: 2, name: 'Requer atenção' })).toBeInTheDocument()
+  it('consulta parcial: mostra as fontes disponíveis e avisa que outras podem faltar', () => {
+    openCached(makeApiAnalysis({ evidence: { enabled: true, sources: [SOURCE], failed: true } }))
+    expect(section()).toHaveTextContent('A consulta às fontes foi parcial.')
+    expect(section()).toHaveTextContent('A lista pode estar incompleta.')
+    expect(within(section()).getByRole('article')).toHaveTextContent('Prefeitura confirma novos horários')
+    expect(within(section()).getByRole('link', { name: 'Iniciar nova análise' })).toHaveAttribute('href', '/')
   })
 })
 
@@ -511,7 +488,7 @@ describe('RF29: resultado recuperado pelo identificador', () => {
     const fetchImpl = vi.fn(async () => jsonResponse(apiErrors.notFound, { status: 404 }))
     openFromApi(fetchImpl)
     expect(await screen.findByRole('heading', { name: 'Análise não encontrada.' })).toBeInTheDocument()
-    expect(screen.getByRole('link', { name: 'Verificar outro conteúdo' })).toHaveAttribute('href', '/')
+    expect(screen.getByRole('link', { name: 'Iniciar nova análise' })).toHaveAttribute('href', '/')
     expect(screen.getByRole('link', { name: 'Abrir o histórico' })).toHaveAttribute('href', '/historico')
     expect(document.title).toBe('Resultado indisponível — Apura')
   })

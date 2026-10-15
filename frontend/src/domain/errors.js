@@ -53,7 +53,7 @@ export const ACTION_LABELS = Object.freeze({
   paste_text: 'Colar o texto da notícia',
   retry: 'Tentar de novo',
   reload: 'Recarregar a página',
-  new_analysis: 'Verificar outro conteúdo',
+  new_analysis: 'Iniciar nova análise',
   open_history: 'Abrir o histórico',
 })
 
@@ -229,11 +229,11 @@ export function describeError(error) {
       }
     case 'evidence_failure':
       return {
-        title: 'Não foi possível consultar as fontes.',
-        message:
-          'A análise abaixo considera só o texto enviado e por isso é limitada: ela pode mudar quando as fontes estiverem disponíveis. ' +
-          'Você pode seguir com ela ou tentar de novo.',
-        actions: ['retry'],
+        title: d.partial === true ? 'A consulta às fontes foi parcial.' : 'Não foi possível consultar todas as fontes.',
+        message: d.partial === true
+          ? 'As fontes abaixo foram encontradas, mas outra consulta falhou. A lista pode estar incompleta. Para tentar novamente, inicie uma nova análise.'
+          : 'Uma ou mais consultas falharam e nenhuma fonte foi encontrada nas consultas concluídas. O resultado pode estar incompleto. Para tentar novamente, inicie uma nova análise.',
+        actions: ['new_analysis'],
         field: null,
       }
     case 'timeout':

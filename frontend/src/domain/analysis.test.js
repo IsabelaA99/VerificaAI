@@ -162,9 +162,10 @@ describe('evidências (RF07, RF08)', () => {
     expect(normalizeSource({ relation: 'INSUFICIENTE' }, 0)?.relation).toBe('insufficient')
   })
 
-  it('PROPOSTA (RF27, cenário 6): evidence.failed marca falha na consulta de evidências', () => {
+  it('evidence.failed marca falha na consulta de evidências, mesmo com fontes parciais', () => {
     expect(normalizeAnalysis(makeApiAnalysis({ evidence: { enabled: true, failed: true, sources: [] } })).evidence.status).toBe('failed')
     expect(normalizeAnalysis(makeApiAnalysis({ evidence: { enabled: true, error: { code: 'x' }, sources: [] } })).evidence.status).toBe('failed')
+    expect(normalizeAnalysis(makeApiAnalysis({ evidence: { enabled: true, failed: true, sources: [{ relation: 'contextual' }] } })).evidence).toMatchObject({ status: 'failed', sources: [{ relation: 'contextual' }] })
   })
 })
 

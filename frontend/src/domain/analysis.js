@@ -176,8 +176,8 @@ function normalizeEvidence(raw) {
   const sources = Array.isArray(evidence.sources)
     ? /** @type {Source[]} */ (evidence.sources.map(normalizeSource).filter(Boolean))
     : []
-  // PROPOSTA (RF27, cenário 6): a API ainda não sinaliza falha na consulta de evidências.
-  // A interface entende "evidence.failed: true" ou um objeto "evidence.error". Confirmar.
+  // A API sinaliza falha total ou parcial com evidence.failed: true.
+  // Mantemos a leitura de evidence.error para respostas de versões anteriores.
   const failed = evidence.failed === true || isRecord(evidence.error)
   /** @type {EvidenceStatus} */
   let status = 'disabled'

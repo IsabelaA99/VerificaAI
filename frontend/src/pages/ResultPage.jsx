@@ -14,7 +14,6 @@ import VerdictCard from '../components/result/VerdictCard.jsx'
 import Button from '../components/ui/Button.jsx'
 import { useAnalysisResult } from '../hooks/useAnalysisResult.js'
 import { useDocumentTitle } from '../hooks/useDocumentTitle.js'
-import { useToast } from '../state/toast.jsx'
 
 // Página de resultado (RF16, RF17, RF18, RF26).
 //
@@ -28,20 +27,9 @@ import { useToast } from '../state/toast.jsx'
 /** @param {{ id: string | undefined, onRetryLoad: () => void }} props */
 function ResultView({ id, onRetryLoad }) {
   const state = useAnalysisResult(id)
-  const toast = useToast()
-
   useDocumentTitle(
     state.status === 'error' ? 'Resultado indisponível' : state.status === 'loading' ? 'Carregando resultado' : 'Resultado da análise',
   )
-
-  async function retryEvidence() {
-    const updated = await state.refresh?.()
-    if (!updated) {
-      toast.show({ message: 'Não foi possível atualizar agora. Tente de novo em instantes.', tone: 'error' })
-    } else if (updated.evidence.status === 'failed') {
-      toast.show({ message: 'As fontes ainda não estão disponíveis. A análise continua limitada.', tone: 'info' })
-    }
-  }
 
   if (state.status === 'loading') {
     return (
@@ -92,7 +80,7 @@ function ResultView({ id, onRetryLoad }) {
           <VerdictCard analysis={analysis} />
           <NextSteps analysis={analysis} />
           <ExplanationSection analysis={analysis} />
-          <SourcesSection analysis={analysis} onRetry={retryEvidence} retrying={state.refreshing} />
+          <SourcesSection analysis={analysis} />
           <IndicatorsSection indicators={analysis.indicators} />
           <LimitationsSection limitations={analysis.limitations} />
           <TechnicalDetails analysis={analysis} />

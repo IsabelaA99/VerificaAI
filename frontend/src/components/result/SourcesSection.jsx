@@ -81,13 +81,14 @@ function SourceCard({ source }) {
 /**
  * @param {{
  *   analysis: import('../../domain/analysis.js').Analysis,
- *   onRetry?: () => void,
- *   retrying?: boolean,
  * }} props
  */
-export default function SourcesSection({ analysis, onRetry, retrying = false }) {
+export default function SourcesSection({ analysis }) {
   const { evidence } = analysis
-  const failure = useMemo(() => new AppError({ scenario: 'evidence_failure' }), [])
+  const failure = useMemo(
+    () => new AppError({ scenario: 'evidence_failure', details: { partial: evidence.sources.length > 0 } }),
+    [evidence.sources.length],
+  )
 
   return (
     <section className="sheet sheet--pad result-section">
@@ -99,10 +100,6 @@ export default function SourcesSection({ analysis, onRetry, retrying = false }) 
           error={failure}
           focusOnMount={false}
           headingLevel={3}
-          busy={retrying}
-          onAction={(action) => {
-            if (action === 'retry') onRetry?.()
-          }}
         />
       ) : null}
 

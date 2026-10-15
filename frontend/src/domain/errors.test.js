@@ -45,7 +45,7 @@ describe('catálogo de erros (RF27)', () => {
     expect(actions('text_insufficient')).toContain('fix_input')
     expect(actions('unsupported_language')).toContain('fix_input')
     expect(actions('api_unavailable')).toContain('retry') // tentar novamente
-    expect(actions('evidence_failure')).toContain('retry')
+    expect(actions('evidence_failure')).toContain('new_analysis')
     expect(actions('timeout')).toContain('retry')
   })
 

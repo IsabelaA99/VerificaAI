@@ -60,8 +60,8 @@ def _extract_query_keywords(claim_text: str, max_words: int = 8) -> str:
     return " ".join(keywords[:max_words])
 
 
-def _search_google_fact_check(query: str, api_key: str) -> list[dict[str, Any]]:
-    """Consulta a API oficial do Google Fact Check Tools."""
+def _search_google_fact_check(query: str, api_key: str) -> list[dict[str, Any]] | None:
+    """Consulta a API oficial: [] significa busca sem achados; None, falha."""
     params = {
         "query": query,
         "languageCode": "pt-BR",
@@ -72,7 +72,7 @@ def _search_google_fact_check(query: str, api_key: str) -> list[dict[str, Any]]:
         resp = requests.get(GOOGLE_FACTCHECK_URL, params=params, timeout=6)
         if resp.status_code != 200:
             logger.warning("Google Fact Check API retornou status %s", resp.status_code)
-            return []
+            return None
         data = resp.json()
         claims = data.get("claims") or []
         results: list[dict[str, Any]] = []
@@ -111,9 +111,9 @@ def _search_google_fact_check(query: str, api_key: str) -> list[dict[str, Any]]:
                 })
 
         return results
-    except Exception:
-        logger.exception("Falha ao consultar Google Fact Check API")
-        return []
+    except Exception as exc:
+        logger.warning("Falha ao consultar Google Fact Check API: %s", type(exc).__name__)
+        return None
 
 
 _STOPWORDS_QUERY = {
@@ -210,7 +210,7 @@ def _clean_html_snippet(text: str) -> str:
     return clean.strip()
 
 
-def _search_comprova(query: str, max_results: int = 2) -> list[dict[str, Any]]:
+def _search_comprova(query: str, max_results: int = 2) -> list[dict[str, Any]] | None:
     """Consulta o Projeto Comprova (consórcio de 28 redações jornalísticas no Brasil)."""
     url = f"https://projetocomprova.com.br/?s={urllib.parse.quote(query)}"
     headers = {
@@ -219,7 +219,8 @@ def _search_comprova(query: str, max_results: int = 2) -> list[dict[str, Any]]:
     try:
         resp = requests.get(url, headers=headers, timeout=5)
         if resp.status_code != 200:
-            return []
+            logger.warning("Projeto Comprova retornou status %s", resp.status_code)
+            return None
         soup = BeautifulSoup(resp.text, "html.parser")
         items: list[dict[str, Any]] = []
         for art in soup.select("article"):
@@ -262,12 +263,12 @@ def _search_comprova(query: str, max_results: int = 2) -> list[dict[str, Any]]:
             if len(items) >= max_results:
                 break
         return items
-    except Exception:
-        logger.warning("Falha ao buscar checagem no Projeto Comprova")
-        return []
+    except Exception as exc:
+        logger.warning("Falha ao buscar checagem no Projeto Comprova: %s", type(exc).__name__)
+        return None
 
 
-def _search_boatos(query: str, max_results: int = 2) -> list[dict[str, Any]]:
+def _search_boatos(query: str, max_results: int = 2) -> list[dict[str, Any]] | None:
     """Consulta o Boatos.org (agência independente brasileira de desmentidos)."""
     url = f"https://www.boatos.org/?s={urllib.parse.quote(query)}"
     headers = {
@@ -276,7 +277,8 @@ def _search_boatos(query: str, max_results: int = 2) -> list[dict[str, Any]]:
     try:
         resp = requests.get(url, headers=headers, timeout=5)
         if resp.status_code != 200:
-            return []
+            logger.warning("Boatos.org retornou status %s", resp.status_code)
+            return None
         soup = BeautifulSoup(resp.text, "html.parser")
         items: list[dict[str, Any]] = []
         for art in soup.select("article"):
@@ -319,12 +321,12 @@ def _search_boatos(query: str, max_results: int = 2) -> list[dict[str, Any]]:
             if len(items) >= max_results:
                 break
         return items
-    except Exception:
-        logger.warning("Falha ao buscar checagem no Boatos.org")
-        return []
+    except Exception as exc:
+        logger.warning("Falha ao buscar checagem no Boatos.org: %s", type(exc).__name__)
+        return None
 
 
-def _search_wikipedia(query: str, max_results: int = 2) -> list[dict[str, Any]]:
+def _search_wikipedia(query: str, max_results: int = 2) -> list[dict[str, Any]] | None:
     """Consulta a Wikipédia em português para consenso histórico, científico e enciclopédico."""
     url = "https://pt.wikipedia.org/w/api.php"
     params = {
@@ -339,7 +341,8 @@ def _search_wikipedia(query: str, max_results: int = 2) -> list[dict[str, Any]]:
     try:
         resp = requests.get(url, params=params, headers=headers, timeout=5)
         if resp.status_code != 200:
-            return []
+            logger.warning("Wikipédia retornou status %s", resp.status_code)
+            return None
         items_data = resp.json().get("query", {}).get("search", [])
         results: list[dict[str, Any]] = []
         query_words = [w for w in query.lower().split() if len(w) > 3]
@@ -374,9 +377,9 @@ def _search_wikipedia(query: str, max_results: int = 2) -> list[dict[str, Any]]:
                 "relation_reason": reason,
             })
         return results
-    except Exception:
-        logger.warning("Falha ao buscar contexto na Wikipédia")
-        return []
+    except Exception as exc:
+        logger.warning("Falha ao buscar contexto na Wikipédia: %s", type(exc).__name__)
+        return None
 
 
 def _search_fact_check_fallback(
@@ -406,7 +409,10 @@ def _search_fact_check_fallback(
             batches.append([])
             continue
         try:
-            batches.append(job.result())
+            batch = job.result()
+            if batch is None:
+                incomplete = True
+            batches.append(batch or [])
         except Exception:
             incomplete = True
             batches.append([])
@@ -437,7 +443,7 @@ def _search_fact_check_fallback(
         item["id"] = f"src-{idx}"
 
     if incomplete and failures is not None:
-        failures.append("source_timeout_or_busy")
+        failures.append("source_lookup_incomplete")
     return results[:4]
 
 
@@ -447,13 +453,14 @@ def search_fact_checks(claim_or_title: str, *, deadline: Deadline | None = None)
     Retorna estrutura padronizada para o serializer e pipeline:
     {
         "status": "found" | "none",
+        "failed": bool,  # alguma consulta não pôde ser concluída
         "enabled": True,
         "sources": [...],
         "conflict_score": 1.0 | 0.0 | None
     }
     """
     if not claim_or_title or len(claim_or_title.strip()) < 5:
-        return {"status": "none", "enabled": True, "sources": [], "conflict_score": None}
+        return {"status": "none", "failed": False, "enabled": True, "sources": [], "conflict_score": None}
 
     deadline = deadline or Deadline.after(8)
     failed = False
@@ -465,8 +472,15 @@ def search_fact_checks(claim_or_title: str, *, deadline: Deadline | None = None)
     # 1. Tenta a API oficial do Google Fact Check se a chave estiver configurada
     if api_key:
         try:
-            sources = deadline.child(3).call(_search_google_fact_check, query, api_key)
+            google_sources = deadline.child(3).call(_search_google_fact_check, query, api_key)
+            if google_sources is None:
+                failed = True
+            else:
+                sources = google_sources
         except (DeadlineExceeded, ServiceBusy):
+            failed = True
+        except Exception as exc:
+            logger.warning("Falha inesperada ao consultar Google Fact Check API: %s", type(exc).__name__)
             failed = True
 
     # Resultados da busca podem tratar apenas de um assunto parecido.
