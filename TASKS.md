@@ -54,6 +54,7 @@ regras de risco, abstenção e rastreabilidade de versões.
 ## Etapa 2 — Entrada por URL e segurança
 - [x] Extração estruturada: título, subtítulo, corpo, autoria, data, domínio com Trafilatura e BeautifulSoup (RF02)
 - [x] Tratamento de falhas: rede, HTTP, paywall, antirrobô, popups de consentimento, não textual (RF03)
+- [x] T08: interface reconhece os códigos reais de falha de URL e oferece corrigir o link, colar texto ou tentar novamente conforme a causa; timeout do site tem mensagem própria
 - [x] Proteção SSRF: validação de todos os IPs resolvidos e de cada redirecionamento antes da conexão; conexão vinculada ao IP público validado (RNF09)
 - [x] Testes de segurança SSRF e extração com mocks, incluindo redirecionamento a destino interno e mudança de DNS
 
