@@ -5,10 +5,12 @@ import json
 import threading
 import time
 import uuid
+from dataclasses import replace
 from types import SimpleNamespace
 from unittest.mock import patch
 
 from django.apps import apps
+from django.core.cache import cache
 from django.db import connection
 from django.test import TestCase
 from django.urls import reverse
@@ -17,6 +19,7 @@ from rest_framework.test import APIClient
 from analysis.models import Analysis
 from analysis.services import classifier as classifier_service
 from analysis.services import llm as llm_service
+from analysis.services import risk as risk_service
 from analysis.services.classifier import ClassificationResult
 from analysis.services.llm import LLMExplanation
 from analysis.services.scraper import ScrapedArticle
@@ -50,6 +53,9 @@ class FakeClassifier:
 
 class AnalysisApiTests(TestCase):
     def setUp(self):
+        # O throttle usa cache, que não participa do rollback do banco de testes.
+        cache.clear()
+        self.addCleanup(cache.clear)
         self.groq_patch = patch("analysis.services.llm._call_groq", return_value=None)
         self.gemini_patch = patch("analysis.services.llm._call_gemini", return_value=None)
         self.openai_patch = patch("analysis.services.llm._call_openai", return_value=None)
@@ -114,6 +120,89 @@ class AnalysisApiTests(TestCase):
             response = self._post({"text": PT_TEXT})
         self.assertEqual(response.status_code, 201, response.content)
         self.assertEqual(synthesize.call_args.kwargs["sources"], [sources[1]])
+
+    def test_synthesis_consensus_does_not_supply_external_evidence(self):
+        classifier_service.set_classifier(FakeClassifier(0.25))
+        contextual = {"id": "src-1", "relation": "contextual", "title": "Contexto sobre o tema"}
+        for failed in (False, True):
+            for sources in ([], [contextual]):
+                for consensus in ("conforme_consenso", "diverge_consenso"):
+                    with self.subTest(failed=failed, sources=sources, consensus=consensus):
+                        explanation = LLMExplanation(
+                            summary="Síntese de teste", key_points=[], provider="teste",
+                            verdict_tendency="inconclusiva",
+                            semantic_comparison={"consensus_status": consensus},
+                        )
+                        with patch("analysis.services.pipeline.factcheck.search_fact_checks", return_value={
+                            "status": "found" if sources else "none", "sources": sources,
+                            "conflict_score": None, "failed": failed,
+                        }), patch("analysis.services.pipeline.llm.synthesize_explanation", return_value=explanation):
+                            response = self._post({"text": PT_TEXT})
+                        self.assertEqual(response.status_code, 201, response.content)
+                        body = response.json()
+                        self.assertIn("evidence_conflict", body["risk"]["signals_missing"])
+                        self.assertNotIn("evidence_conflict", body["risk"]["signals_used"])
+                        # Sem sinal externo: 100 * (0.6 * 0.25 + 0.15 * 0) / 0.75.
+                        self.assertEqual(body["risk_index"], 20.0)
+                        self.assertEqual(body["evidence"]["sources"], sources)
+                        stored = Analysis.objects.get(pk=body["id"])
+                        self.assertEqual(stored.technical["risk"], body["risk"])
+
+    def test_required_evidence_cannot_be_replaced_by_synthesis_or_context(self):
+        classifier_service.set_classifier(FakeClassifier(0.25))
+        strict_rules = replace(risk_service.load_rules(), require_evidence=True)
+        cases = (
+            {"status": "none", "sources": [], "conflict_score": None, "failed": False},
+            {"status": "none", "sources": [], "conflict_score": None, "failed": True},
+            # Um score isolado não comprova que existe uma fonte verificada.
+            {"status": "found", "sources": [{"relation": "contextual"}], "conflict_score": 1.0},
+        )
+        for fact_result in cases:
+            for consensus in ("conforme_consenso", "diverge_consenso"):
+                with self.subTest(fact_result=fact_result, consensus=consensus):
+                    explanation = LLMExplanation(
+                        summary="Síntese de teste", key_points=[], provider="teste",
+                        verdict_tendency="inconclusiva",
+                        semantic_comparison={"consensus_status": consensus},
+                    )
+                    with patch("analysis.services.pipeline.risk.load_rules", return_value=strict_rules), \
+                         patch("analysis.services.pipeline.factcheck.search_fact_checks", return_value=fact_result), \
+                         patch("analysis.services.pipeline.llm.synthesize_explanation", return_value=explanation):
+                        response = self._post({"text": PT_TEXT})
+                    self.assertEqual(response.status_code, 201, response.content)
+                    body = response.json()
+                    self.assertEqual(body["status"]["code"], "analise_inconclusiva")
+                    self.assertIsNone(body["risk_index"])
+                    self.assertIn("insufficient_evidence", [item["code"] for item in body["abstention"]])
+                    self.assertNotIn("evidence_conflict", body["risk"]["signals_used"])
+
+    def test_verified_sources_keep_their_signal_even_with_partial_lookup(self):
+        classifier_service.set_classifier(FakeClassifier(0.9))
+        strict_rules = replace(risk_service.load_rules(), require_evidence=True)
+        for relation, score, consensus, expected_index in (
+            ("compatible", 0.0, "diverge_consenso", 54.0),
+            ("conflicting", 1.0, "conforme_consenso", 79.0),
+        ):
+            for failed in (False, True):
+                with self.subTest(relation=relation, failed=failed):
+                    source = {"id": "src-1", "relation": relation, "title": "Checagem da mesma alegação"}
+                    explanation = LLMExplanation(
+                        summary="Síntese de teste", key_points=[], provider="teste",
+                        verdict_tendency="inconclusiva",
+                        semantic_comparison={"consensus_status": consensus},
+                    )
+                    with patch("analysis.services.pipeline.risk.load_rules", return_value=strict_rules), \
+                         patch("analysis.services.pipeline.factcheck.search_fact_checks", return_value={
+                             "status": "found", "sources": [source], "conflict_score": score, "failed": failed,
+                         }), patch("analysis.services.pipeline.llm.synthesize_explanation", return_value=explanation):
+                        response = self._post({"text": PT_TEXT})
+                    self.assertEqual(response.status_code, 201, response.content)
+                    body = response.json()
+                    self.assertEqual(body["risk"]["signals_used"]["evidence_conflict"], score)
+                    self.assertEqual(body["risk_index"], expected_index)
+                    self.assertFalse(body["abstention"])
+                    self.assertEqual(body["evidence"]["sources"], [source])
+                    self.assertEqual(body["evidence"]["failed"], failed)
 
     def test_low_risk_result(self):
         classifier_service.set_classifier(FakeClassifier(0.02))
