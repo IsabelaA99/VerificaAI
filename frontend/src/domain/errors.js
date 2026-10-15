@@ -59,7 +59,7 @@ export const ACTION_LABELS = Object.freeze({
 
 /**
  * Código de erro da API → cenário da interface.
- * Os códigos da primeira parte existem no back end (verificAI, commit 63a0382).
+ * Inclui os códigos emitidos pelo scraper do back end.
  */
 const CODE_TO_SCENARIO = Object.freeze({
   // Existentes no back end hoje.
@@ -73,16 +73,23 @@ const CODE_TO_SCENARIO = Object.freeze({
   analysis_unavailable: 'api_unavailable',
   analysis_not_found: 'not_found',
   throttled: 'rate_limited',
+  invalid_url: 'invalid_url',
+  invalid_url_scheme: 'invalid_url',
+  forbidden_url: 'invalid_url',
+  dns_resolution_failed: 'page_unreachable',
+  too_many_redirects: 'page_unreachable',
+  url_timeout: 'page_unreachable',
+  paywall_or_forbidden: 'page_unreachable',
+  http_error: 'page_unreachable',
+  non_text_content: 'page_unreachable',
+  empty_scraped_text: 'page_unreachable',
 })
 
 /**
- * PROPOSTA — estes códigos AINDA NÃO EXISTEM no back end. Os cenários 1, 2 e 6 do RF27
- * dependem das Etapas 2 e 3 (entrada por URL e evidências). Os nomes abaixo são a sugestão
- * da interface; confirmar ou trocar com quem constrói o back end. A tela já funciona assim
- * que a API devolver qualquer um deles.
+ * Nomes alternativos mantidos por compatibilidade com o contrato proposto pela interface.
+ * Os códigos atuais do scraper estão no mapa principal acima.
  */
 export const PROPOSED_CODE_TO_SCENARIO = Object.freeze({
-  invalid_url: 'invalid_url',
   page_unreachable: 'page_unreachable',
   page_blocked: 'page_unreachable',
   page_paywalled: 'page_unreachable',
@@ -134,6 +141,50 @@ const formatCount = (value) => (typeof value === 'number' ? numberFormat.format(
  * @typedef {{ title: string, message: string, actions: ErrorActionId[], field: 'text' | 'url' | null }} ErrorView
  */
 
+/** @type {Record<string, Omit<ErrorView, 'field'>>} */
+const URL_PAGE_ERRORS = {
+  dns_resolution_failed: {
+    title: 'Não encontramos esse site.',
+    message: 'Confira se o endereço foi digitado corretamente. Você também pode colar o texto da notícia.',
+    actions: ['fix_input', 'paste_text'],
+  },
+  too_many_redirects: {
+    title: 'O link redirecionou muitas vezes.',
+    message: 'Use o endereço direto da matéria ou cole o texto da notícia.',
+    actions: ['fix_input', 'paste_text'],
+  },
+  url_timeout: {
+    title: 'O site demorou para responder.',
+    message: 'Não conseguimos abrir a página no prazo disponível. Tente de novo ou cole o texto da notícia.',
+    actions: ['retry', 'paste_text'],
+  },
+  network_error: {
+    title: 'Não conseguimos conectar ao site da notícia.',
+    message: 'Tente de novo em instantes ou cole o texto da notícia para continuar.',
+    actions: ['retry', 'paste_text'],
+  },
+  paywall_or_forbidden: {
+    title: 'O site bloqueou a leitura automática.',
+    message: 'A página pode exigir assinatura ou restringir acessos automáticos. Se você tem acesso à notícia, copie e cole o texto.',
+    actions: ['paste_text'],
+  },
+  http_error: {
+    title: 'Não conseguimos abrir essa página.',
+    message: 'O site retornou um erro. Confira se a matéria ainda está disponível, tente de novo ou cole o texto.',
+    actions: ['paste_text', 'retry', 'fix_input'],
+  },
+  non_text_content: {
+    title: 'Esse link não aponta para uma página de texto.',
+    message: 'Use o link direto de uma matéria ou cole o texto da notícia.',
+    actions: ['fix_input', 'paste_text'],
+  },
+  empty_scraped_text: {
+    title: 'Não conseguimos extrair o texto dessa página.',
+    message: 'Copie o conteúdo da notícia e cole na aba Colar texto para continuar.',
+    actions: ['paste_text'],
+  },
+}
+
 /**
  * Textos e ações de cada cenário. Linguagem simples, uma frase de problema e uma de saída.
  * @param {AppError} error
@@ -150,6 +201,14 @@ export function describeError(error) {
         field: 'text',
       }
     case 'invalid_url': {
+      if (error.code === 'forbidden_url') {
+        return {
+          title: 'Esse endereço é de uma rede interna ou restrita.',
+          message: 'Use o endereço de uma notícia em um site público ou cole o texto da notícia.',
+          actions: ['fix_input', 'paste_text'],
+          field: 'url',
+        }
+      }
       const reason = d.reason
       const message =
         reason === 'empty'
@@ -167,6 +226,13 @@ export function describeError(error) {
       }
     }
     case 'page_unreachable':
+      if (Object.hasOwn(URL_PAGE_ERRORS, error.code)) {
+        return {
+          ...URL_PAGE_ERRORS[error.code],
+          message: `${URL_PAGE_ERRORS[error.code].message} Nenhuma análise foi feita só com o endereço.`,
+          field: 'url',
+        }
+      }
       return {
         title: 'Não conseguimos abrir essa página.',
         message:
@@ -305,6 +371,10 @@ export function classifyApiFailure({ status, body, retryAfterSeconds = null }) {
     apiAction: envelope && typeof envelope.action === 'string' ? envelope.action : '',
   }
 
+  // A falha ao buscar a notícia é diferente da perda de conexão navegador → API.
+  if (code === 'network_error' && field === 'url') {
+    return new AppError({ ...base, scenario: 'page_unreachable' })
+  }
   const known = /** @type {Record<string, Scenario>} */ (CODE_TO_SCENARIO)[code] ?? /** @type {Record<string, Scenario>} */ (PROPOSED_CODE_TO_SCENARIO)[code]
   if (known) return new AppError({ ...base, scenario: known })
 

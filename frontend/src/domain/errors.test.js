@@ -124,12 +124,44 @@ describe('classifyApiFailure com respostas reais do back end', () => {
     expect(classifyApiFailure({ status: 418, body: null }).scenario).toBe('rejected')
   })
 
-  it('códigos propostos para as Etapas 2 e 3 já são entendidos (RF27, cenários 1, 2 e 6)', () => {
+  it('mantém compatibilidade com os nomes alternativos do contrato proposto', () => {
     expect(PROPOSED_CODE_TO_SCENARIO.page_unreachable).toBe('page_unreachable')
     for (const code of ['invalid_url', 'page_unreachable', 'page_blocked', 'page_paywalled', 'page_not_text', 'evidence_unavailable']) {
       const error = classifyApiFailure({ status: 422, body: makeApiError({ code }) })
       expect(['invalid_url', 'page_unreachable', 'evidence_failure']).toContain(error.scenario)
     }
+  })
+})
+
+describe('erros reais de extração de URL', () => {
+  it.each([
+    ['invalid_url', 'invalid_url', ['fix_input'], /endereço completo/],
+    ['invalid_url_scheme', 'invalid_url', ['fix_input'], /https/],
+    ['forbidden_url', 'invalid_url', ['fix_input', 'paste_text'], /site público/],
+    ['dns_resolution_failed', 'page_unreachable', ['fix_input', 'paste_text'], /digitado corretamente/],
+    ['too_many_redirects', 'page_unreachable', ['fix_input', 'paste_text'], /endereço direto/],
+    ['url_timeout', 'page_unreachable', ['retry', 'paste_text'], /prazo disponível/],
+    ['network_error', 'page_unreachable', ['retry', 'paste_text'], /Tente de novo/],
+    ['paywall_or_forbidden', 'page_unreachable', ['paste_text'], /restringir acessos automáticos/],
+    ['http_error', 'page_unreachable', ['paste_text', 'retry', 'fix_input'], /site retornou um erro/],
+    ['non_text_content', 'page_unreachable', ['fix_input', 'paste_text'], /link direto/],
+    ['empty_scraped_text', 'page_unreachable', ['paste_text'], /Copie o conteúdo/],
+  ])('%s oferece uma saída adequada à falha', (code, scenario, actions, message) => {
+    const error = classifyApiFailure({ status: 400, body: makeApiError({ code, field: 'url' }) })
+    expect(error.scenario).toBe(scenario)
+    const view = describeError(error)
+    expect(view.field).toBe('url')
+    expect(view.actions).toEqual(actions)
+    expect(view.message).toMatch(message)
+    expect(view.message).not.toMatch(/30 segundos/)
+    if (scenario === 'page_unreachable') expect(view.message).toContain('Nenhuma análise foi feita só com o endereço.')
+  })
+
+  it('distingue falha ao buscar a notícia, falha navegador/API e timeout da análise', () => {
+    expect(networkFailure().scenario).toBe('api_unavailable')
+    expect(classifyApiFailure({ status: 503, body: makeApiError({ code: 'network_error' }) }).scenario).toBe('api_unavailable')
+    expect(classifyApiFailure({ status: 504, body: makeApiError({ code: 'analysis_timeout' }) }).scenario).toBe('timeout')
+    expect(timeoutFailure().scenario).toBe('timeout')
   })
 })
 

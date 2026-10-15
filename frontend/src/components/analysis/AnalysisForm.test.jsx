@@ -6,7 +6,7 @@ import { describe, expect, it, vi } from 'vitest'
 import { formatNumber } from '../../domain/format.js'
 import { TEXT_LIMITS, VISITOR_LIMIT } from '../../domain/limits.js'
 import { createDemoAuthGateway } from '../../services/gateways.js'
-import { apiErrors, makeApiAnalysis } from '../../test/fixtures.js'
+import { apiErrors, makeApiAnalysis, makeApiError } from '../../test/fixtures.js'
 import { createTestServices, jsonResponse, renderWithApp } from '../../test/render.jsx'
 import AnalysisForm, { EXAMPLE_TEXT } from './AnalysisForm.jsx'
 
@@ -428,6 +428,57 @@ describe('RF33: limite de visitante', () => {
 })
 
 describe('RF27: erros da API na tela do formulário', () => {
+  it.each(['paywall_or_forbidden', 'empty_scraped_text'])('%s permite continuar colando o texto sem consumir a cota', async (code) => {
+    const fetchImpl = vi.fn(async () => jsonResponse(makeApiError({ code, field: 'url' }), { status: 400 }))
+    const { services } = setup({ fetchImpl })
+    await userEvent.type(textarea(), VALID_TEXT)
+    await userEvent.click(screen.getByRole('tab', { name: 'Inserir link' }))
+    await userEvent.type(screen.getByLabelText('Endereço completo da notícia'), 'https://exemplo.com/noticia')
+    await userEvent.click(submit())
+    expect(await findErrorAlert()).toHaveTextContent('Nenhuma análise foi feita só com o endereço.')
+    expect(services.visitorLimit.remaining()).toBe(VISITOR_LIMIT.max)
+    await userEvent.click(screen.getByRole('button', { name: 'Colar o texto da notícia' }))
+    expect(screen.getByRole('tab', { name: 'Colar texto', selected: true })).toBeInTheDocument()
+    expect(textarea()).toHaveFocus()
+    expect(textarea()).toHaveValue(VALID_TEXT)
+    expect(queryErrorAlert()).not.toBeInTheDocument()
+    expect(fetchImpl).toHaveBeenCalledTimes(1)
+  })
+
+  it('timeout do site oferece nova tentativa com o mesmo link', async () => {
+    const fetchImpl = vi.fn()
+      .mockResolvedValueOnce(jsonResponse(makeApiError({ code: 'url_timeout', field: 'url' }), { status: 400 }))
+      .mockResolvedValueOnce(created(makeApiAnalysis({ input_type: 'url' })))
+    const { services } = setup({ fetchImpl })
+    await userEvent.click(screen.getByRole('tab', { name: 'Inserir link' }))
+    await userEvent.type(screen.getByLabelText('Endereço completo da notícia'), 'https://exemplo.com/noticia')
+    await userEvent.click(submit())
+    const alert = await findErrorAlert()
+    expect(alert).toHaveTextContent('O site demorou para responder.')
+    expect(alert).not.toHaveTextContent('30 segundos')
+    expect(services.visitorLimit.remaining()).toBe(VISITOR_LIMIT.max)
+    await userEvent.click(screen.getByRole('button', { name: 'Tentar de novo' }))
+    await screen.findByText(/RESULTADO/)
+    expect(fetchImpl).toHaveBeenCalledTimes(2)
+    expect(bodyOf(fetchImpl, 1)).toEqual({ input_type: 'url', url: 'https://exemplo.com/noticia' })
+    expect(services.visitorLimit.remaining()).toBe(VISITOR_LIMIT.max - 1)
+  })
+
+  it('endereço interno orienta usar site público e permite corrigir o link', async () => {
+    const fetchImpl = vi.fn(async () => jsonResponse(makeApiError({ code: 'forbidden_url', field: 'url' }), { status: 400 }))
+    setup({ fetchImpl })
+    await userEvent.click(screen.getByRole('tab', { name: 'Inserir link' }))
+    const input = screen.getByLabelText('Endereço completo da notícia')
+    await userEvent.type(input, 'http://127.0.0.1/noticia')
+    await userEvent.click(submit())
+    expect(await findErrorAlert()).toHaveTextContent('site público')
+    await userEvent.click(screen.getByRole('button', { name: 'Corrigir o conteúdo' }))
+    const returnedInput = screen.getByLabelText('Endereço completo da notícia')
+    expect(returnedInput).toHaveFocus()
+    expect(returnedInput).toHaveValue('http://127.0.0.1/noticia')
+    expect(fetchImpl).toHaveBeenCalledTimes(1)
+  })
+
   it('idioma não suportado: explica, leva o foco ao campo e não gasta o limite', async () => {
     const fetchImpl = vi.fn(async () => jsonResponse(apiErrors.unsupportedLanguage, { status: 400 }))
     const { services } = setup({ fetchImpl })
