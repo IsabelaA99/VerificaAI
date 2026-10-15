@@ -327,6 +327,26 @@ class AnalysisApiTests(TestCase):
         analysis = Analysis.objects.latest("created_at")
         self.assertEqual((analysis.technical or {}).get("classification", {}).get("training_scope"), "in_domain_press")
 
+    def test_extension_response_masks_pii_and_exposes_source_failure(self):
+        classifier_service.set_classifier(FakeClassifier(0.9))
+        email = "maria@exemplo.com"
+        phone = "(11) 98765-4321"
+        self.fact_patch.stop()
+        with patch("analysis.services.pipeline.factcheck.search_fact_checks", return_value={
+            "status": "none", "sources": [], "conflict_score": None, "failed": True,
+        }):
+            resp = self.client.post(
+                self.url,
+                data={"title": f"Notícia sobre {email}", "content": PT_TEXT + f" Contato {phone}"},
+                format="json",
+                HTTP_X_CLIENT_SOURCE="browser-extension",
+            )
+        self.assertEqual(resp.status_code, 201, resp.content)
+        serialized = json.dumps(resp.json(), ensure_ascii=False)
+        self.assertNotIn(email, serialized)
+        self.assertNotIn(phone, serialized)
+        self.assertTrue(resp.json()["result"]["evidence"]["failed"])
+
     def test_extension_throttle_exempt(self):
         from rest_framework.test import APIRequestFactory
         from analysis.api.throttling import ExtensionOrAnonThrottle

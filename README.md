@@ -343,6 +343,7 @@ o prazo de retenção e a revisão das cópias de segurança ainda precisam ser 
 {
   "input_type": "text",
   "title": "Título extraído da página",
+  "subtitle": "Linha-fina ou og:description da página",
   "text": "Corpo principal do artigo extraído pelo content.js..."
 }
 ```

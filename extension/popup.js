@@ -7,6 +7,8 @@
  */
 
 const SERVER_URL = 'http://127.0.0.1:8000/api/v1/analyses/';
+// O servidor encerra a análise em 27 s (HTTP 504); 30 s é o mesmo prazo da interface web.
+const REQUEST_TIMEOUT_MS = 30000;
 
 // ── Estado da aplicação ──────────────────────────────────────────────────────
 let currentResult = null;
@@ -73,22 +75,36 @@ async function runAnalysis() {
         }
 
         // Envia para o servidor Django
-        const apiResponse = await fetch(SERVER_URL, {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json',
-                'X-Client-Source': 'browser-extension',
-            },
-            body: JSON.stringify({
-                input_type: 'text',
-                title,
-                subtitle,
-                text: content,
-                url,
-            }),
-        });
+        const controller = new AbortController();
+        const timer = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
+        let apiResponse;
+        try {
+            apiResponse = await fetch(SERVER_URL, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'X-Client-Source': 'browser-extension',
+                },
+                body: JSON.stringify({
+                    input_type: 'text',
+                    title,
+                    subtitle,
+                    text: content,
+                    url,
+                }),
+                signal: controller.signal,
+            });
+        } catch (fetchErr) {
+            if (fetchErr.name === 'AbortError') {
+                throw new Error('A análise não terminou no prazo disponível.\nTente novamente em instantes.');
+            }
+            throw new Error('Não foi possível conectar ao servidor Apura. Verifique se ele está rodando.');
+        } finally {
+            clearTimeout(timer);
+        }
 
-        const data = await apiResponse.json();
+        // Erros de proxy ou gateway podem chegar como HTML, sem o JSON da API.
+        const data = await apiResponse.json().catch(() => null);
 
         if (!apiResponse.ok) {
             const errMsg = data?.error?.message || `Erro ${apiResponse.status} do servidor.`;
@@ -96,7 +112,7 @@ async function runAnalysis() {
             throw new Error(errAction ? `${errMsg}\n${errAction}` : errMsg);
         }
 
-        if (data.status !== 'ok' || !data.result) {
+        if (data?.status !== 'ok' || !data.result) {
             throw new Error('O servidor retornou uma resposta inesperada.');
         }
 
@@ -258,9 +274,19 @@ function renderModal(result) {
     const evidenceEl = document.getElementById('modal-evidence');
     const evidenceSection = document.getElementById('modal-evidence-section');
     const sources = result.evidence?.sources || [];
-    if (sources.length > 0) {
+    // evidence.failed: alguma consulta a fontes falhou ou estourou o prazo (o resultado pode estar incompleto).
+    const lookupFailed = result.evidence?.failed === true || Boolean(result.evidence?.error);
+    const failureNotice = !lookupFailed ? '' : `
+        <div class="verdict-alert verdict-alert--warning">
+            <div class="alert-title">${sources.length > 0 ? 'A consulta às fontes foi parcial.' : 'Não foi possível consultar todas as fontes.'}</div>
+            <div class="alert-message">${sources.length > 0
+                ? 'As fontes abaixo foram encontradas, mas outra consulta falhou. A lista pode estar incompleta.'
+                : 'Uma ou mais consultas falharam e nenhuma fonte foi encontrada nas consultas concluídas. O resultado pode estar incompleto.'}
+                Para tentar novamente, inicie uma nova análise.</div>
+        </div>`;
+    if (sources.length > 0 || lookupFailed) {
         evidenceSection.classList.remove('hidden');
-        evidenceEl.innerHTML = sources.map(s => `
+        evidenceEl.innerHTML = failureNotice + sources.map(s => `
             <div class="evidence-item">
                 <div class="evidence-publisher">${escHtml(s.publisher || 'Fonte desconhecida')}</div>
                 <div class="evidence-title">${escHtml(s.title || '')}</div>
