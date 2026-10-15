@@ -23,7 +23,13 @@ na ordem desta lista):
     "demorado"                 espera 16 s antes de responder (para ver o aviso "estou analisando")
     qualquer outro texto       Requer atenção
 
-Um link (``input_type=url``) recebe 501, como na API real hoje (Etapa 2 ainda não existe).
+Um link (``input_type=url``) não é aberto: as palavras do ENDEREÇO escolhem o resultado, pelas
+mesmas regras acima (".../noticia-urgente" dá Alto risco), e estas provocam os erros do scraper:
+
+    "paywall" no endereço      erro: site bloqueou ou pede assinatura (400)
+    "fora-do-ar"               erro: o site demorou a responder (400)
+    "pouco-texto"              erro: a página quase não tem texto (400, text_too_short)
+    sem http:// ou https://    erro: endereço inválido (400)
 """
 
 from __future__ import annotations
@@ -132,6 +138,50 @@ def pick_result(text: str) -> tuple[int, dict[str, Any], dict[str, str]]:
     return 201, _fresh(payloads.make_analysis(), text), {}
 
 
+# Texto que a API "extrai" da página. A API real baixa a página; esta não acessa a internet.
+PAGE_TEXT = (
+    "Página de exemplo aberta pela API de mentirinha. Ela não acessa a internet: finge que leu a "
+    "notícia e escolhe o resultado pelas palavras do endereço."
+)
+
+
+def _url_error(code: str, message: str, action: str) -> tuple[int, dict[str, Any], dict[str, str]]:
+    return 400, payloads.error(code, message, action, field="url"), {}
+
+
+def pick_link_result(url: str) -> tuple[int, dict[str, Any], dict[str, str]]:
+    """Como ``pick_result``, mas para um link. Os erros usam os códigos reais do scraper da API."""
+    lowered = url.lower()
+    if not lowered.startswith(("http://", "https://")):
+        return _url_error(
+            "invalid_url_scheme",
+            "Apenas links com endereço 'http://' ou 'https://' são permitidos.",
+            "Verifique o endereço colado e tente novamente.",
+        )
+    if "paywall" in lowered:
+        return _url_error(
+            "paywall_or_forbidden",
+            "O site bloqueou o acesso automático (paywall ou proteção antirrobô).",
+            "Copie o texto da notícia e cole diretamente na aba 'Colar texto'.",
+        )
+    if "fora-do-ar" in lowered:
+        return _url_error(
+            "url_timeout",
+            "O site de notícias demorou muito para responder.",
+            "Tente novamente ou cole o texto da notícia diretamente no formulário.",
+        )
+    if "pouco-texto" in lowered:
+        # A API valida o texto extraído da página com as mesmas regras do texto colado.
+        return pick_result("Só um título.")
+
+    # As palavras do endereço escolhem o resultado: ".../noticia-urgente" vira Alto risco.
+    words = re.sub(r"[^a-z0-9áéíóúâêôãõç]+", " ", lowered)
+    status, body, headers = pick_result(f"{PAGE_TEXT} {words}")
+    if status == 201:
+        body["input_type"] = "url"
+    return status, body, headers
+
+
 def create_fake_api(*, slow_seconds: float = SLOW_SECONDS) -> Flask:
     app = Flask(__name__)
 
@@ -141,7 +191,11 @@ def create_fake_api(*, slow_seconds: float = SLOW_SECONDS) -> Flask:
         data = data if isinstance(data, dict) else {}
 
         if data.get("input_type") == "url":
-            return _reply(501, payloads.URL_UNAVAILABLE, {})
+            url = data.get("url")
+            url = url if isinstance(url, str) else ""
+            if "demorado" in url.lower():
+                time.sleep(slow_seconds)
+            return _reply(*pick_link_result(url))
 
         text = data.get("text")
         text = text if isinstance(text, str) else ""

@@ -84,8 +84,19 @@ def test_devolve_o_corpo_da_api_quando_da_certo(client):
         (400, payloads.error("validation_error", "x", "y", field="text"), "text_insufficient"),
         (400, payloads.error("validation_error", "x", "y", field="url"), "invalid_url"),
         (400, payloads.error("validation_error", "x", "y", field="title"), "rejected"),
-        # Códigos PROPOSTOS para as Etapas 2 e 3 (ainda não existem no back end).
+        # Códigos reais do scraper do back end (entrada por link).
         (400, payloads.error("invalid_url", "x", "y", field="url"), "invalid_url"),
+        (400, payloads.error("invalid_url_scheme", "x", "y", field="url"), "invalid_url"),
+        (400, payloads.error("forbidden_url", "x", "y", field="url"), "invalid_url"),
+        (400, payloads.error("dns_resolution_failed", "x", "y", field="url"), "page_unreachable"),
+        (400, payloads.error("too_many_redirects", "x", "y", field="url"), "page_unreachable"),
+        (400, payloads.error("url_timeout", "x", "y", field="url"), "page_unreachable"),
+        (400, payloads.error("network_error", "x", "y", field="url"), "page_unreachable"),
+        (400, payloads.error("paywall_or_forbidden", "x", "y", field="url"), "page_unreachable"),
+        (400, payloads.error("http_error", "x", "y", field="url"), "page_unreachable"),
+        (400, payloads.error("non_text_content", "x", "y", field="url"), "page_unreachable"),
+        (400, payloads.error("empty_scraped_text", "x", "y", field="url"), "page_unreachable"),
+        # Códigos PROPOSTOS para a Etapa 3 (ainda não existem no back end).
         (422, payloads.error("page_unreachable", "x", "y", field="url"), "page_unreachable"),
         (502, payloads.error("evidence_unavailable", "x", "y"), "evidence_failure"),
         # Sem código conhecido, decide pelo status HTTP.

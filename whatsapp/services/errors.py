@@ -20,12 +20,25 @@ CODE_TO_SCENARIO: dict[str, str] = {
     "analysis_unavailable": "api_unavailable",
     "analysis_not_found": "not_found",
     "throttled": "rate_limited",
+    # Entrada por link (apura/analysis/services/scraper.py). Endereço que não serve:
+    "invalid_url": "invalid_url",
+    "invalid_url_scheme": "invalid_url",
+    "forbidden_url": "invalid_url",  # endereço interno ou privado, bloqueado contra SSRF (RNF09)
+    # Endereço certo, mas a página não pôde ser lida (o site não existe, caiu, bloqueou, pede
+    # assinatura, não é uma página de texto ou não tem texto de notícia):
+    "dns_resolution_failed": "page_unreachable",
+    "too_many_redirects": "page_unreachable",
+    "url_timeout": "page_unreachable",
+    "network_error": "page_unreachable",
+    "paywall_or_forbidden": "page_unreachable",
+    "http_error": "page_unreachable",
+    "non_text_content": "page_unreachable",
+    "empty_scraped_text": "page_unreachable",
 }
 
-# PROPOSTA — estes códigos AINDA NÃO EXISTEM no back end (Etapas 2 e 3). São os mesmos que a
+# PROPOSTA — estes códigos AINDA NÃO EXISTEM no back end (Etapa 3). São os mesmos que a
 # interface web assume. Confirmar ou trocar com quem constrói o back end.
 PROPOSED_CODE_TO_SCENARIO: dict[str, str] = {
-    "invalid_url": "invalid_url",
     "page_unreachable": "page_unreachable",
     "page_blocked": "page_unreachable",
     "page_paywalled": "page_unreachable",
@@ -102,6 +115,32 @@ def classify_failure(status: int, body: Any, retry_after_seconds: int | None = N
     if status >= 400:
         return ApuraApiError("rejected", **base)
     return ApuraApiError("unknown", **base)
+
+
+# Quando a pessoa mandou um link, a API valida o texto que ELA extraiu da página. "Seu texto tem 30
+# caracteres" não faria sentido para quem não mandou texto nenhum.
+_LINK_SCENARIOS = {
+    "text_insufficient": "page_unreachable",  # a página quase não tem texto de notícia
+    "text_unreadable": "page_unreachable",
+    "text_too_long": "page_too_long",
+}
+
+
+def for_link(error: ApuraApiError) -> ApuraApiError:
+    """Traduz um erro de validação de texto para quem enviou um link."""
+    scenario = _LINK_SCENARIOS.get(error.scenario)
+    if scenario is None:
+        return error
+    return ApuraApiError(
+        scenario,
+        code=error.code,
+        status=error.status,
+        field=error.field,
+        details=error.details,
+        retry_after_seconds=error.retry_after_seconds,
+        api_message=error.api_message,
+        api_action=error.api_action,
+    )
 
 
 def network_failure() -> ApuraApiError:

@@ -20,7 +20,7 @@ from dataclasses import dataclass
 from config import TWILIO_BODY_LIMIT, Settings
 from services import messages
 from services.apura_client import ApuraClient
-from services.errors import ApuraApiError
+from services.errors import ApuraApiError, for_link
 from services.reply_builder import (
     Analysis,
     build_error_messages,
@@ -30,7 +30,7 @@ from services.reply_builder import (
 )
 from services.safe_log import log_event, origin_of
 from services.twilio_io import MessageSender
-from utils.message_utils import as_link, normalize_command, split_message
+from utils.message_utils import as_link, normalize_command, shared_link, split_message
 
 logger = logging.getLogger(__name__)
 
@@ -72,7 +72,7 @@ class Incoming:
 
 @dataclass(frozen=True)
 class Intent:
-    kind: str  # text | link | help | media | empty | link_unavailable | link_incomplete
+    kind: str  # text | link | help | media | empty | link_unavailable
     reply: tuple[str, ...] = ()  # resposta pronta, quando não precisa chamar a API
     text: str | None = None
     url: str | None = None
@@ -99,13 +99,16 @@ def interpret(incoming: Incoming, *, url_input_enabled: bool) -> Intent:
         return Intent("help", reply=(messages.welcome(url_input_enabled=url_input_enabled),))
 
     link = as_link(body)
+    if link is None:
+        shared = shared_link(body, max_comment_chars=messages.MIN_TEXT_CHARS)
+        link = (shared, True) if shared else None
     if link is not None:
         address, has_scheme = link
         if not url_input_enabled:
             return Intent("link_unavailable", reply=(messages.link_not_available(),))
-        if not has_scheme:
-            return Intent("link_incomplete", reply=(messages.link_without_scheme(),))
-        return Intent("link", url=address)
+        # "g1.globo.com/x" é um link: a pessoa não precisa saber o que é "https://". Sites de
+        # notícia respondem em https; se não responder, a API devolve "página inacessível".
+        return Intent("link", url=address if has_scheme else f"https://{address}")
 
     return Intent("text", text=incoming.body)
 
@@ -140,7 +143,8 @@ class ReplyService:
         try:
             outcome = future.result(timeout=self._settings.sync_wait_seconds)
         except FutureTimeout:
-            return self._continue_later(future, incoming)
+            ack = messages.ACK_LINK if intent.kind == "link" else messages.ACK
+            return self._continue_later(future, incoming, ack=ack)
         return self._render(outcome, incoming)
 
     # ------------------------------------------------------------------ análise
@@ -155,6 +159,8 @@ class ReplyService:
                 raw = self._client.analyze(url=intent.url)
             analysis = parse_analysis(raw)
         except ApuraApiError as error:
+            if intent.url is not None:
+                error = for_link(error)
             log_event(
                 logger,
                 "analise_falhou",
@@ -196,7 +202,7 @@ class ReplyService:
 
     # ------------------------------------------------------------------ resposta depois do prazo
 
-    def _continue_later(self, future: Future[Outcome], incoming: Incoming) -> list[str]:
+    def _continue_later(self, future: Future[Outcome], incoming: Incoming, *, ack: str = messages.ACK) -> list[str]:
         """A análise passou do prazo do webhook: avisa agora e envia o resultado quando terminar."""
         sender = self._sender
         if sender is None:
@@ -218,4 +224,4 @@ class ReplyService:
                 )
 
         future.add_done_callback(deliver)
-        return split_message(messages.ACK)
+        return split_message(ack)

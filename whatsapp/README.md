@@ -57,10 +57,19 @@ prometer o que não pode cumprir.
 |---|---|
 | Texto de notícia | Analisa (a API aplica as regras: 50 a 5.000 caracteres, português) |
 | `oi`, `ajuda`, `menu`, `como funciona`… | Explica como usar |
-| Só um link | Responde que link ainda não é aceito (`URL_INPUT_ENABLED=false`) ou, se ligado, envia como link |
+| Só um link | Envia como link: a **API** abre a página e extrai a notícia (scraper do back end) |
+| Link sem `https://` (`g1.globo.com/…`) | Completa com `https://` e envia como link |
+| Um link com comentário curto (`olha isso https://…`) | Envia como link: o comentário tem menos de 50 caracteres e não poderia ser analisado sozinho |
 | Imagem, áudio, documento (mesmo com legenda) | Avisa que só analisa texto; nada é analisado |
 | Vazio, emoji ou pontuação | Pede o texto |
-| Texto com um link no meio | É texto: analisa normalmente |
+| Texto de 50 caracteres ou mais com um link no meio | É texto: analisa o texto, não a página |
+
+Com `URL_INPUT_ENABLED=false`, qualquer link recebe na hora "a análise por link ainda não está
+disponível", sem chamar a API.
+
+Erros de link usam os códigos reais do scraper (`paywall_or_forbidden`, `url_timeout`,
+`http_error`…, em `services/errors.py`) e viram "Não conseguimos abrir essa página". Quando a
+página tem texto de menos ou demais, a resposta fala da **página**, e não de "seu texto".
 
 ### Exemplo de resposta (API real, classificador simulado)
 
@@ -141,7 +150,7 @@ não é conferida, e o resultado enviado "depois do prazo" aparece no terminal.
 | qualquer outra coisa | É enviada como mensagem |
 
 A **API de mentirinha** (`tools/fake_apura_api.py`) responde no formato real da API v1, mas **não
-analisa nada**: escolhe o resultado pelas palavras do texto (a lista está no começo do arquivo), e
+analisa nada**: escolhe o resultado pelas palavras do texto, ou do endereço quando é um link (a lista está no começo do arquivo), e
 cada explicação começa com um aviso de que é fixa. Os resultados com fontes usam o formato
 **proposto** (a API real ainda não o tem). Para usá-la com o chatbot de verdade:
 
@@ -181,19 +190,21 @@ pytest
 ruff check . && ruff format --check .
 ```
 
-São 289 testes, sem rede.
+São 323 testes, sem rede.
 
 Os testes cobrem: divisão de mensagens; leitura de configuração; cliente da API (todos os códigos
 de erro, tempo limite, versão incompatível); texto das respostas (RF14, RF16 a RF18); fluxo de
 resposta imediata e de resultado enviado depois; assinatura da Twilio (válida, ausente, adulterada,
 URL diferente, atrás de proxy); envio pelo SDK real da Twilio com a rede interceptada; e a garantia
 de que **nenhum log contém telefone, texto da pessoa ou segredo** (RNF10).
-Os 56 testes de `tests/test_tools.py` conferem as ferramentas de teste manual: cada exemplo do
+Os 63 testes de `tests/test_tools.py` conferem as ferramentas de teste manual: cada exemplo do
 simulador provoca a situação que anuncia, e o cliente real do chatbot entende a API de mentirinha.
 
 Além disso, foi feita uma verificação com o **back end real** (Django + DRF, classificador
 simulado): os quatro status, texto curto, idioma não suportado, texto longo, limite de requisições
-(429 com `Retry-After`) e o 501 do link, todos lidos corretamente pelo chatbot.
+(429 com `Retry-After`), todos lidos corretamente pelo chatbot. A entrada por link foi verificada
+com o back end real e o modelo BERTimbau: notícia da Agência Brasil (link sozinho e com
+comentário) e site inexistente.
 
 ## Implantação
 
@@ -246,8 +257,10 @@ Estas escolhas foram feitas por falta de requisito e **precisam de confirmação
    quando a mensagem chega com exatamente 1.600, a resposta acrescenta esse aviso às limitações.
    Confirmar o comportamento real em teste com o sandbox.
 3. **Imagens e áudios** não são analisados (o requisito só prevê texto e link). A resposta diz isso.
-4. **Link.** Com `URL_INPUT_ENABLED=true` o chatbot envia um link sozinho como `input_type=url`.
-   Hoje a API responde 501; por isso o padrão é desligado.
+4. **Link.** A API já abre links, então o padrão é `URL_INPUT_ENABLED=true`. Um link com
+   comentário de menos de 50 caracteres vai como link; com comentário maior, vai como texto (o
+   texto que a pessoa recebeu é a alegação). Uma manchete compartilhada com mais de 50 caracteres
+   é analisada como texto, só a manchete: confirmar se o grupo prefere analisar a página.
 5. **Fontes e falha na consulta de evidências** (Etapa 3): o formato assumido (`relation`,
    `publisher`, `title`, `url`; `evidence.failed` ou `evidence.error`) e os códigos `invalid_url`,
    `page_unreachable`, `evidence_unavailable` são **propostas**, iguais às da interface web. Estão

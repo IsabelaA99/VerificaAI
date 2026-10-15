@@ -51,6 +51,11 @@ MEDIA_NOT_SUPPORTED = "Recebi um arquivo, mas por enquanto só analiso texto. Co
 
 ACK = "Recebi o texto e estou analisando. Pode levar até 30 segundos. Envio o resultado aqui assim que terminar."
 
+ACK_LINK = (
+    "Recebi o link. Estou abrindo a página e analisando a notícia. Pode levar até 30 segundos. "
+    "Envio o resultado aqui assim que terminar."
+)
+
 # Sem as credenciais da Twilio não há como enviar o resultado depois do prazo do webhook.
 LATER_UNAVAILABLE = (
     "A análise está demorando mais do que o WhatsApp permite esperar. Envie o texto de novo em alguns instantes."
@@ -67,10 +72,6 @@ BODY_AT_TWILIO_LIMIT_NOTE = (
     f"O WhatsApp entrega ao Apura até {format_int(1600)} caracteres por mensagem. "
     "Se o seu texto era maior, parte dele pode não ter sido analisada."
 )
-
-
-def link_without_scheme() -> str:
-    return "*Falta o começo do endereço.*\nUse o endereço completo, com http:// ou https:// antes do nome do site."
 
 
 def link_not_available() -> str:
@@ -91,6 +92,11 @@ def error_text(error: ApuraApiError) -> str:
             "*Não conseguimos abrir essa página.*\n"
             "Ela pode estar fora do ar, pedir assinatura, bloquear acessos automáticos ou não ter texto. "
             "Nenhuma análise foi feita só com o endereço. Você pode colar aqui o texto da notícia."
+        )
+    if scenario == "page_too_long":
+        return (
+            "*A notícia dessa página é longa demais para analisar de uma vez.*\n"
+            "Copie e cole aqui só o trecho com a alegação principal."
         )
     if scenario == "text_insufficient":
         minimum = format_int(d.get("min_chars")) or format_int(MIN_TEXT_CHARS)

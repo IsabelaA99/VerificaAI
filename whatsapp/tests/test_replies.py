@@ -62,15 +62,35 @@ class TestInterpret:
         intent = interpret(incoming(" https://exemplo.com/noticia "), url_input_enabled=True)
         assert (intent.kind, intent.url, intent.text) == ("link", "https://exemplo.com/noticia", None)
 
-    def test_endereco_sem_http_pede_o_endereco_completo(self):
+    def test_endereco_sem_http_ganha_https(self):
         intent = interpret(incoming("g1.globo.com/politica/x.ghtml"), url_input_enabled=True)
-        assert intent.kind == "link_incomplete"
-        assert "http:// ou https://" in intent.reply[0]
+        assert (intent.kind, intent.url) == ("link", "https://g1.globo.com/politica/x.ghtml")
+
+    @pytest.mark.parametrize(
+        "body",
+        [
+            "olha isso https://exemplo.com/noticia",
+            "https://exemplo.com/noticia\n\nÉ verdade?",
+            "Viu essa? (https://exemplo.com/noticia).",
+        ],
+    )
+    def test_link_com_comentario_curto_vai_como_link(self, body):
+        # É assim que se compartilha no WhatsApp; o comentário sozinho nem poderia ser analisado
+        intent = interpret(incoming(body), url_input_enabled=True)
+        assert (intent.kind, intent.url, intent.text) == ("link", "https://exemplo.com/noticia", None)
+
+    def test_link_com_comentario_curto_e_links_desligados_avisa_sem_chamar_a_api(self):
+        intent = interpret(incoming("olha isso https://exemplo.com/noticia"), url_input_enabled=False)
+        assert intent.kind == "link_unavailable"
 
     def test_texto_com_link_no_meio_continua_sendo_texto(self):
         body = f"{TEXT} Veja https://exemplo.com/x"
         intent = interpret(incoming(body), url_input_enabled=True)
         assert (intent.kind, intent.text) == ("text", body)
+
+    def test_comentario_curto_com_dois_links_continua_sendo_texto(self):
+        body = "compare https://a.exemplo.com/x e https://b.exemplo.com/y"
+        assert interpret(incoming(body), url_input_enabled=True).kind == "text"
 
     def test_texto_vai_exatamente_como_chegou(self):
         body = f"  {TEXT}\n\nSegunda linha.  "
@@ -101,6 +121,19 @@ class TestRespostaImediata:
         blocks = service(FakeClient(error)).handle(incoming("texto curto"))
         assert "Seu texto tem 12 caracteres." in blocks[0]
         assert "Cole o parágrafo completo" in blocks[0]
+
+    def test_pagina_sem_texto_nao_fala_do_texto_da_pessoa(self):
+        # A API valida o texto que ELA extraiu da página; a pessoa mandou só um link
+        error = ApuraApiError("text_insufficient", details={"length": 12, "min_chars": 50})
+        blocks = service(FakeClient(error)).handle(incoming("https://exemplo.com/noticia"))
+        assert "Não conseguimos abrir essa página" in blocks[0]
+        assert "Seu texto" not in blocks[0]
+
+    def test_pagina_longa_demais_pede_o_trecho_principal(self):
+        error = ApuraApiError("text_too_long", details={"length": 30000, "max_chars": 20000})
+        blocks = service(FakeClient(error)).handle(incoming("https://exemplo.com/noticia"))
+        assert "longa demais" in blocks[0]
+        assert "Seu texto" not in blocks[0]
 
     def test_defeito_inesperado_nao_derruba_a_conversa(self):
         blocks = service(FakeClient(RuntimeError("boom"))).handle(incoming())
@@ -141,6 +174,13 @@ class TestResultadoEnviadoDepois:
         assert sent["to"] == USER_NUMBER  # responde à pessoa...
         assert sent["from_"] == BOT_NUMBER  # ...a partir do número que ela escreveu
         assert sent["bodies"][0].startswith("*Status: Requer atenção*")
+
+    def test_demora_com_link_avisa_que_recebeu_o_link(self):
+        client, sender = self.slow(payloads.make_analysis(input_type="url")), FakeSender()
+        reply = service(client, sender, sync_wait_seconds=0.05).handle(incoming("https://exemplo.com/noticia"))
+        assert reply == [messages.ACK_LINK]
+        client.release.set()
+        assert sender.done.wait(timeout=5)
 
     def test_o_conteudo_enviado_depois_e_o_mesmo_da_resposta_imediata(self):
         fast = service(FakeClient(payloads.make_analysis())).handle(incoming())

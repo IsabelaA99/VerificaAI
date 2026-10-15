@@ -1,6 +1,6 @@
 import pytest
 
-from utils.message_utils import MAX_MESSAGE_CHARS, as_link, normalize_command, split_message
+from utils.message_utils import MAX_MESSAGE_CHARS, as_link, normalize_command, shared_link, split_message
 
 
 class TestSplitMessage:
@@ -107,3 +107,25 @@ class TestAsLink:
     )
     def test_texto_comum_nao_e_link(self, raw):
         assert as_link(raw) is None
+
+
+class TestSharedLink:
+    @pytest.mark.parametrize(
+        ("raw", "link"),
+        [
+            ("olha isso https://exemplo.com/a", "https://exemplo.com/a"),
+            ("https://exemplo.com/a?b=1\n\nverdade?", "https://exemplo.com/a?b=1"),
+            ("viu? (https://exemplo.com/a).", "https://exemplo.com/a"),
+            ("“https://exemplo.com/a”", "https://exemplo.com/a"),
+        ],
+    )
+    def test_link_com_comentario_curto(self, raw, link):
+        assert shared_link(raw, max_comment_chars=50) == link
+
+    def test_comentario_do_tamanho_do_minimo_ja_e_texto(self):
+        assert shared_link("a" * 50 + " https://exemplo.com/a", max_comment_chars=50) is None
+        assert shared_link("a" * 49 + " https://exemplo.com/a", max_comment_chars=50) == "https://exemplo.com/a"
+
+    @pytest.mark.parametrize("raw", ["sem link nenhum", "https://a.com/x e https://b.com/y", "exemplo.com/a veja"])
+    def test_sem_um_unico_link_com_http(self, raw):
+        assert shared_link(raw, max_comment_chars=50) is None

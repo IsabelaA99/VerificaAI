@@ -140,11 +140,32 @@ class TestFakeApiRoutes:
         assert reply.status_code == 201
         assert reply.get_json()["api_version"] == "v1"
 
-    def test_link_gets_501_like_the_real_api_today(self, api) -> None:
+    def test_link_gets_an_analysis(self, api) -> None:
         reply = api.post("/api/v1/analyses/", json={"input_type": "url", "url": "https://exemplo.com/a"})
 
-        assert reply.status_code == 501
-        assert classify_failure(501, reply.get_json()).scenario == "url_unavailable"
+        assert reply.status_code == 201
+        assert reply.get_json()["input_type"] == "url"
+
+    def test_words_in_the_link_pick_the_result(self, api) -> None:
+        reply = api.post("/api/v1/analyses/", json={"input_type": "url", "url": "https://exemplo.com/noticia-urgente"})
+
+        assert reply.get_json()["status"]["code"] == "alto_risco"
+
+    @pytest.mark.parametrize(
+        ("url", "code", "scenario"),
+        [
+            ("https://exemplo.com/paywall", "paywall_or_forbidden", "page_unreachable"),
+            ("https://exemplo.com/fora-do-ar", "url_timeout", "page_unreachable"),
+            ("https://exemplo.com/pouco-texto", "text_too_short", "text_insufficient"),
+            ("ftp://exemplo.com/a", "invalid_url_scheme", "invalid_url"),
+        ],
+    )
+    def test_link_errors_use_the_real_scraper_codes(self, api, url, code, scenario) -> None:
+        reply = api.post("/api/v1/analyses/", json={"input_type": "url", "url": url})
+
+        assert reply.status_code == 400
+        assert reply.get_json()["error"]["code"] == code
+        assert classify_failure(400, reply.get_json()).scenario == scenario
 
     @pytest.mark.parametrize("body", [None, "não é json", [1, 2], {"text": 42}])
     def test_garbage_is_treated_as_empty_text(self, api, body) -> None:
@@ -207,11 +228,14 @@ class TestApuraClientAgainstTheFakeApi:
         assert caught.value.scenario == "rate_limited"
         assert caught.value.retry_after_seconds == fake.THROTTLE_WAIT_SECONDS
 
-    def test_link_is_refused_as_unavailable(self, client: ApuraClient) -> None:
-        with pytest.raises(ApuraApiError) as caught:
-            client.analyze(url="https://exemplo.com/noticia")
+    def test_link_gets_an_analysis(self, client: ApuraClient) -> None:
+        assert client.analyze(url="https://exemplo.com/noticia")["input_type"] == "url"
 
-        assert caught.value.scenario == "url_unavailable"
+    def test_blocked_page_is_unreachable(self, client: ApuraClient) -> None:
+        with pytest.raises(ApuraApiError) as caught:
+            client.analyze(url="https://exemplo.com/paywall")
+
+        assert caught.value.scenario == "page_unreachable"
 
 
 # --------------------------------------------------------------------------- simulador
@@ -291,11 +315,15 @@ class TestSimulatorSend:
         assert simulator.send("", num_media=1) == [messages.MEDIA_NOT_SUPPORTED]
         assert client.calls == []
 
-    def test_bare_link_is_not_sent_to_the_api_while_links_are_off(
-        self, simulator: Simulator, client: FakeClient
-    ) -> None:
+    def test_bare_link_is_sent_as_a_link(self, simulator: Simulator, client: FakeClient) -> None:
         simulator.send("https://exemplo.com/noticia")
 
+        assert client.calls == [{"text": None, "url": "https://exemplo.com/noticia"}]
+
+    def test_bare_link_is_not_sent_to_the_api_while_links_are_off(self, screen: Screen, client: FakeClient) -> None:
+        off = Simulator(Settings(validate_signature=False, url_input_enabled=False), screen, client=client)
+
+        assert off.send("https://exemplo.com/noticia") == [messages.link_not_available()]
         assert client.calls == []
 
     def test_slow_analysis_gets_the_notice_now_and_the_result_later(
@@ -360,7 +388,8 @@ class TestRunLoop:
     def test_media_and_link_commands(self, simulator: Simulator, screen: Screen, client: FakeClient) -> None:
         simulate.run(simulator, screen, read_line=feed("/midia", "/link", "/sair"))
 
-        assert client.calls == []
+        # A imagem não chega à API; o link chega
+        assert client.calls == [{"text": None, "url": "https://exemplo.com/noticia"}]
 
     def test_logs_command_turns_logs_on(self, simulator: Simulator, screen: Screen) -> None:
         turned_on: list[bool] = []

@@ -65,9 +65,10 @@ class Settings:
     sync_wait_seconds: float = 12.0
     max_workers: int = 8
 
-    # Entrada por link. A API devolve 501 até a Etapa 2; enquanto desligado, o chatbot responde
-    # na hora que o link ainda não é aceito, sem chamar a API.
-    url_input_enabled: bool = False
+    # Entrada por link: o chatbot envia o link e a API abre a página e extrai a notícia. Desligado,
+    # o chatbot responde na hora que o link não é aceito, sem chamar a API (útil se a raspagem
+    # da API estiver fora do ar).
+    url_input_enabled: bool = True
 
     # Endereço público da interface web (opcional). Quando existe, a resposta termina com o link
     # da página completa do resultado.

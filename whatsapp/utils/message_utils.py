@@ -103,8 +103,8 @@ def as_link(text: str) -> tuple[str, bool] | None:
     """Se a mensagem inteira é um link, devolve (link, tem_http). Senão, ``None``.
 
     "Mensagem inteira" importa: um texto de notícia que contém um link no meio continua sendo
-    texto. Um endereço sem http(s):// (ex.: "g1.globo.com/politica") é reconhecido como link
-    incompleto para a pessoa saber o que corrigir.
+    texto. Um endereço sem http(s):// (ex.: "g1.globo.com/politica") também é link; quem chama
+    completa o começo.
     """
     candidate = text.strip()
     if not candidate or re.search(r"\s", candidate):
@@ -114,3 +114,23 @@ def as_link(text: str) -> tuple[str, bool] | None:
     if _BARE_ADDRESS.fullmatch(candidate):
         return candidate, False
     return None
+
+
+# Pontuação que gruda no fim do link quando ele está numa frase: "veja (https://x.com/a)."
+_LINK_TRAILING_PUNCTUATION = ".,;:!?)]}>\"'»”’"
+
+
+def shared_link(text: str, *, max_comment_chars: int) -> str | None:
+    """Link de uma mensagem com UM link e um comentário curto ("olha isso https://…").
+
+    É o jeito comum de compartilhar no WhatsApp. Só vale quando o comentário tem menos de
+    ``max_comment_chars``: abaixo do mínimo da API, o comentário sozinho nem poderia ser analisado,
+    e a notícia está na página. Um texto maior que cita um link continua sendo texto.
+    """
+    links = _SCHEME_URL.findall(text)
+    if len(links) != 1:
+        return None
+    comment = re.sub(r"\s+", " ", _SCHEME_URL.sub(" ", text)).strip()
+    if len(comment) >= max_comment_chars:
+        return None
+    return links[0].rstrip(_LINK_TRAILING_PUNCTUATION)

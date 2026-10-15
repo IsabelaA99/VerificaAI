@@ -12,7 +12,7 @@ def test_padroes_servem_para_desenvolvimento():
     assert settings.apura_api_base_url == "http://localhost:8000/api"
     assert settings.api_timeout_seconds == 30  # RNF01
     assert settings.sync_wait_seconds == 12
-    assert settings.url_input_enabled is False
+    assert settings.url_input_enabled is True  # a API abre a página (scraper do back end)
     assert settings.validate_signature is True
     assert settings.can_reply_later is False
 
