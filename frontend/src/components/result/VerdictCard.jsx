@@ -63,8 +63,11 @@ export default function VerdictCard({ analysis }) {
         const isOutOfDomain = Boolean(model.isOutOfDomain)
         const isSatire = model.discourseType === 'satira' || model.trainingScope === 'out_of_domain_satire'
         const isConspiracy = model.discourseType === 'teoria_conspiratoria' || model.discourseType === 'conspiracy_or_theoretical'
-        const isTraditionalPress = (model.trainingScope === 'in_domain_press' || model.discourseType === 'factual') && !isSatire && !isConspiracy
-        const isDiscrepant = (isOutOfDomain || isConspiracy || isSatire) && truePct >= 50 && !isTraditionalPress
+        const isSensationalism = model.discourseType === 'sensacionalismo'
+        const divergesFromConsensus = sem.consensus_status === 'diverge_consenso'
+        const isHighRiskVerdict = model.verdictTendency === 'alto_risco_falsa'
+        const isTraditionalPress = (model.trainingScope === 'in_domain_press' || model.discourseType === 'factual') && !isSatire && !isConspiracy && !divergesFromConsensus && !isSensationalism && !isHighRiskVerdict
+        const isDiscrepant = (isOutOfDomain || isConspiracy || isSatire || divergesFromConsensus || isSensationalism || isHighRiskVerdict) && truePct >= 50 && !isTraditionalPress
 
         return (
           <div className="model-prob-card">
@@ -88,6 +91,11 @@ export default function VerdictCard({ analysis }) {
                     <>
                       <strong>{formatPercent(fakeRatio)}</strong> de chance de ser <strong>falsa</strong>
                     </>
+                  ) : isDiscrepant ? (
+                    <>
+                      <strong>{formatPercent(trueRatio)}</strong> de <strong>estilo formal</strong>{' '}
+                      <span className="model-prob-card__discrepant-badge">(conteúdo contestado)</span>
+                    </>
                   ) : (
                     <>
                       <strong>{formatPercent(trueRatio)}</strong> de chance de ser <strong>verdadeira</strong>
@@ -98,7 +106,7 @@ export default function VerdictCard({ analysis }) {
                   <p className="model-prob-card__subheadline">
                     {isSatire
                       ? 'Padrão de redação formal simulado · Conteúdo humorístico e fictício'
-                      : 'Padrão de redação da imprensa tradicional (estilo) · Conteúdo contestado por checagens'}
+                      : 'Padrão de redação culto/jornalístico (estilo) · Conteúdo diverge do consenso factual e checagens'}
                   </p>
                 ) : null}
               </div>
@@ -129,10 +137,12 @@ export default function VerdictCard({ analysis }) {
 
             <div className="model-prob-card__breakdown">
               <span className="model-prob-card__label-true">
-                Chance de ser verdadeira: <strong>{formatPercent(trueRatio)}</strong>
+                {isDiscrepant ? 'Padrão de escrita formal:' : 'Chance de ser verdadeira:'}{' '}
+                <strong>{formatPercent(trueRatio)}</strong>
               </span>
               <span className="model-prob-card__label-fake">
-                Chance de ser falsa: <strong>{formatPercent(fakeRatio)}</strong>
+                {isDiscrepant ? 'Falsidade estilística:' : 'Chance de ser falsa:'}{' '}
+                <strong>{formatPercent(fakeRatio)}</strong>
               </span>
             </div>
 
@@ -148,9 +158,9 @@ export default function VerdictCard({ analysis }) {
                   </>
                 ) : (
                   <>
-                    <strong>Atenção: Modelo Treinado em Imprensa Tradicional · Use o Fact-Checking:</strong>
+                    <strong>Atenção: Redação Formal com Conteúdo Conflitante / Divergente:</strong>
                     <span>
-                      O classificador BERTimbau foi treinado exclusivamente com matérias da imprensa tradicional (reconhecimento de formato formal jornalístico). Ele não foi treinado para validar teorias históricas ou conspiratórias. Portanto, a probabilidade calculada ({formatPercent(trueRatio)}) avalia apenas o estilo textual da escrita. A verificação factual deste conteúdo depende prioritariamente das <strong>Checagens de Fatos (Fact-Checking)</strong> e do consenso histórico documentado.
+                      O modelo avalia a <strong>estrutura formal e gramatical da escrita</strong> ({formatPercent(trueRatio)} de estilo jornalístico culto). Porém, a apuração factual e o consenso demonstram que as alegações divergem da realidade ou apresentam afirmações comprovadamente incorretas. <strong>Não confie apenas no estilo de escrita: consulte a comparação de consenso e a nota do especialista abaixo.</strong>
                     </span>
                   </>
                 )}

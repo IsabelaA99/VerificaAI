@@ -168,6 +168,7 @@ class AnalysisResultSerializer(serializers.ModelSerializer):
             "discourse_label": llm_info.get("discourse_label", "Relato Factual"),
             "is_out_of_domain": is_out_of_domain,
             "training_scope": training_scope,
+            "verdict_tendency": llm_info.get("verdict_tendency", ""),
             "semantic_comparison": llm_info.get("semantic_comparison") or {},
             "lexical_analysis": llm_info.get("lexical_analysis") or {},
             "uncertainty_warning": llm_info.get("uncertainty_warning", ""),
