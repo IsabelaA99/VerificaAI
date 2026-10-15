@@ -64,6 +64,7 @@ regras de risco, abstenção e rastreabilidade de versões.
 - [/] Classificação fonte × alegação: veredito só influencia o risco quando o texto da alegação checada corresponde aos termos da alegação enviada, na mesma ordem e sem divergência de negação ou números. Resultados relacionados ficam contextuais; falta validação semântica para reconhecer paráfrases com segurança (RF08)
 - [x] Síntese explicativa contextual via LLM (Gemini / OpenAI / Síntese Neural) explicando "por isso e por isso"
 - [x] Ativação do sinal `evidence_conflict` no cálculo do índice de risco ponderado
+- [x] T02: somente fontes verificadas fornecem `evidence_conflict` e satisfazem a regra de evidência mínima; síntese e fontes contextuais não substituem evidência
 
 ## Etapa 4 — Contas, limite de visitante e histórico
 - [ ] Cadastro, login, logout seguros (RF31, RNF18)

@@ -94,6 +94,12 @@ Quando conclusivo, o índice usa os pesos de `rules_v1.json`:
 
 Sinais ausentes são excluídos e os pesos restantes são normalizados. Sem checagens classificadas como compatíveis ou conflitantes, o índice usa **80%** do modelo e **20%** dos indicadores linguísticos. Esses pesos e limiares são provisórios até a calibração e a validação das fontes.
 
+A síntese por IA não substitui fontes verificadas no sinal `evidence_conflict` nem na regra de
+evidência mínima. A configuração atual usa `require_evidence=false`; quando essa regra é ativada,
+ausência de fontes compatíveis ou conflitantes gera `insufficient_evidence`, mesmo que a síntese
+declare consenso. Fontes apenas contextuais não satisfazem a regra. Uma consulta parcial pode
+preservar evidência de uma fonte verificada, mantendo o aviso de que outras consultas falharam.
+
 Faixas de risco sem sobreposição:
 * **0 a 25:** *Poucos sinais de risco*
 * **Acima de 25 a 60:** *Requer atenção*

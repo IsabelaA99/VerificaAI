@@ -102,9 +102,11 @@ def _execute_pipeline(
     stage_started = time.perf_counter()
     fact_res = factcheck.search_fact_checks(claim_query, deadline=deadline.child(8, reserve=2))
     logger.info("analysis stage=sources ms=%.1f", (time.perf_counter() - stage_started) * 1000)
-    evidence_conflict = fact_res.get("conflict_score")
     verified_sources = [source for source in fact_res.get("sources", [])
                         if source.get("relation") in ("conflicting", "compatible")]
+    # O score vem da relação validada no serviço de fontes; sem fonte verificada,
+    # nem um score isolado nem a síntese podem fornecer evidência externa.
+    evidence_conflict = fact_res.get("conflict_score") if verified_sources else None
 
     # Fontes apenas contextuais aparecem no resultado, mas não sustentam a síntese nem a abstenção.
     # 4. Síntese explicativa via LLM (Gemini / Groq / OpenAI / Síntese Neural Especializada)
@@ -138,15 +140,6 @@ def _execute_pipeline(
         consensus_status = "conforme_consenso"
         discourse_type = "factual"
 
-    # Se não houver fact-checks indexados na API externa, a comparação semântica com o consenso só supre evidência
-    # para conteúdos conspiratórios fora de domínio, NUNCA sobrepondo a imprensa tradicional nem relatos factuais
-    if evidence_conflict is None:
-        if not is_in_domain_factual:
-            if consensus_status == "diverge_consenso" or discourse_type in ("teoria_conspiratoria", "conspiracy_or_theoretical", "satira"):
-                evidence_conflict = 0.90
-            elif consensus_status == "conforme_consenso":
-                evidence_conflict = 0.05
-
     signals = {
         "model_fake_probability": cls.fake_probability,
         "linguistic_indicators": ling["signal"],
@@ -155,7 +148,7 @@ def _execute_pipeline(
     risk_info = risk.compute_risk_index(signals, rules.weights)
 
     # 6. Regra de Abstenção Probabilística (RF14)
-    evidence_available = bool(verified_sources) or (evidence_conflict is not None)
+    evidence_available = bool(verified_sources)
     reasons = risk.abstention_reasons(
         rules=rules,
         model_confidence=cls.confidence,
