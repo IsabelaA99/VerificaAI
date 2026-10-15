@@ -42,12 +42,12 @@ function contentSection({ backend }) {
         `O texto que você cola (de ${formatNumber(TEXT_LIMITS.min)} a ${formatNumber(TEXT_LIMITS.max)} caracteres) é enviado ao servidor do Apura para ser analisado. O servidor não guarda o texto integral como campo da análise, mas guarda o resultado e alguns dados derivados dele.`,
       ),
       backend.sources
-        ? p('Para procurar checagens, o servidor envia palavras do título ou da alegação a serviços de busca. Se uma chave de IA externa estiver configurada, também pode enviar o título, até 1.200 caracteres do corpo e resumos das fontes para gerar a explicação. Sem essa chave, usa uma síntese local.')
+        ? p('Para procurar checagens, o servidor envia palavras do título ou da alegação a serviços de busca. Se uma chave de IA externa estiver configurada, também pode enviar o título, até 1.600 caracteres do corpo e resumos das fontes para gerar a explicação. E-mails, CPFs e telefones reconhecidos são mascarados antes dessas consultas. Sem essa chave, usa uma síntese local.')
         : p('Nesta versão, o texto é analisado dentro do próprio servidor do Apura. Ele não é enviado a outros serviços.'),
       p('O que o servidor guarda de cada análise:'),
       ul([
         'um resumo curto da alegação (o título ou a primeira frase, com até 140 caracteres), com e-mails, CPFs e telefones mascarados;',
-        'o resultado: categoria, índice de risco, explicações, fontes e limitações; esses campos derivados podem repetir trechos do conteúdo enviado ou encontrado;',
+        'o resultado: categoria, índice de risco, explicações, fontes e limitações; e-mails, CPFs e telefones reconhecidos são mascarados antes de guardar esses campos, mas eles ainda podem repetir outros trechos do conteúdo enviado ou encontrado;',
         'as versões do modelo e das regras usadas, a data e a duração da análise;',
         'um identificador anônimo do seu navegador, criado ao acessar o site.',
       ]),

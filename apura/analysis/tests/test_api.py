@@ -1,8 +1,14 @@
 """Testes de integração da API v1 com classificador simulado (RF29)."""
 
+import importlib
+import json
 import threading
 import time
+from types import SimpleNamespace
 from unittest.mock import patch
+
+from django.apps import apps
+from django.db import connection
 from django.test import TestCase
 from django.urls import reverse
 from rest_framework.test import APIClient
@@ -11,6 +17,7 @@ from analysis.models import Analysis
 from analysis.services import classifier as classifier_service
 from analysis.services import llm as llm_service
 from analysis.services.classifier import ClassificationResult
+from analysis.services.llm import LLMExplanation
 from analysis.services.scraper import ScrapedArticle
 from analysis.services.timing import Deadline
 
@@ -126,6 +133,66 @@ class AnalysisApiTests(TestCase):
         stored = str(analysis.__dict__)
         self.assertNotIn("todos os estados do país até o fim do mês", stored)
         self.assertNotIn("maria@exemplo.com", stored)
+
+    def test_derived_personal_data_is_masked_in_storage_and_api(self):
+        classifier_service.set_classifier(FakeClassifier(0.9))
+        email = "maria@exemplo.com"
+        cpf = "123.456.789-09"
+        phone = "(11) 98765-4321"
+        source = {
+            "id": "src-1", "relation": "contextual", "publisher": "Agência",
+            "title": f"Checagem de {email}", "excerpt": f"Contato: {phone}",
+            "url": "https://exemplo.org/checagem?email=maria%40exemplo.com",
+            "relation_reason": f"Cita {cpf}",
+        }
+        explanation = LLMExplanation(
+            summary=f"O texto cita {email}", key_points=[f"Documento {cpf}"], provider="teste",
+            verdict_tendency="inconclusiva",
+            semantic_comparison={"claim_analyzed": email, "consensus_summary": f"Contato {phone}"},
+            lexical_analysis={"note": email}, uncertainty_warning=f"Verifique {email}",
+        )
+        with patch("analysis.services.pipeline.factcheck.search_fact_checks", return_value={
+            "status": "found", "sources": [source], "conflict_score": None,
+        }) as search, patch("analysis.services.pipeline.llm.synthesize_explanation", return_value=explanation):
+            response = self._post({"text": PT_TEXT + f" Contato {phone}", "title": f"Notícia sobre {email}"})
+
+        self.assertEqual(response.status_code, 201, response.content)
+        self.assertNotIn(email, search.call_args.args[0])
+        analysis = Analysis.objects.get(pk=response.json()["id"])
+        stored = json.dumps(analysis.technical, ensure_ascii=False)
+        self.assertNotIn(email, stored)
+        self.assertNotIn(cpf, stored)
+        self.assertNotIn(phone, stored)
+        self.assertEqual(analysis.technical["evidence"]["sources"][0]["url"], "")
+        for body in (response.json(), self.client.get(reverse("api-v1:analysis-detail", args=[analysis.id])).json()):
+            serialized = json.dumps(body, ensure_ascii=False)
+            self.assertNotIn(email, serialized)
+            self.assertNotIn(cpf, serialized)
+            self.assertNotIn(phone, serialized)
+
+    def test_legacy_result_is_masked_on_read_and_by_migration(self):
+        classifier_service.set_classifier(FakeClassifier(0.9))
+        analysis_id = self._post({"text": PT_TEXT}).json()["id"]
+        analysis = Analysis.objects.get(pk=analysis_id)
+        analysis.claim_summary = "Contato maria@exemplo.com"
+        analysis.technical["llm_analysis"]["summary"] = "Contato maria@exemplo.com"
+        analysis.technical["evidence"]["sources"] = [{
+            "url": "https://exemplo.org/?email=maria%40exemplo.com", "title": "Contato maria@exemplo.com",
+        }]
+        analysis.save(update_fields=["claim_summary", "technical"])
+
+        detail_url = reverse("api-v1:analysis-detail", args=[analysis_id])
+        response = self.client.get(detail_url)
+        self.assertEqual(response.status_code, 200)
+        self.assertNotIn("maria@exemplo.com", json.dumps(response.json()))
+        self.assertEqual(response.json()["evidence"]["sources"][0]["url"], "")
+
+        migration = importlib.import_module("analysis.migrations.0002_mask_legacy_analysis_data")
+        migration.mask_existing_analyses(apps, SimpleNamespace(connection=connection))
+        analysis.refresh_from_db()
+        self.assertNotIn("maria@exemplo.com", analysis.claim_summary)
+        self.assertNotIn("maria@exemplo.com", json.dumps(analysis.technical))
+        self.assertEqual(analysis.technical["evidence"]["sources"][0]["url"], "")
 
     def test_get_detail(self):
         classifier_service.set_classifier(FakeClassifier(0.9))

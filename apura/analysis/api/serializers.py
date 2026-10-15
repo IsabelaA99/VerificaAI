@@ -6,6 +6,7 @@ from rest_framework import serializers
 
 from ..models import Analysis
 from ..services import risk
+from ..services.privacy import sanitize_analysis_data
 
 RECOMMENDATIONS = [
     "Procure a fonte original da informação antes de compartilhar.",
@@ -106,6 +107,10 @@ class AnalysisResultSerializer(serializers.ModelSerializer):
             "explanation", "abstention", "evidence", "indicators", "model", "risk",
             "limitations", "recommendations", "versions", "duration_ms", "expert",
         ]
+
+    def to_representation(self, instance):
+        # Também protege registros criados antes do mascaramento na persistência.
+        return sanitize_analysis_data(super().to_representation(instance))
 
     def get_api_version(self, obj):
         return "v1"

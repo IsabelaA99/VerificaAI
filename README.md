@@ -246,6 +246,17 @@ Entrada (Texto ou Link)
 | `POST` | `/api/v1/analyses/` | Submete uma análise síncrona por **texto** ou por **link** (≤ 30s) |
 | `GET` | `/api/v1/analyses/<id>/` | Recupera resultado persistido e versões técnicas |
 
+### Privacidade dos resultados
+
+O texto integral é usado na análise local, mas não é salvo como campo da análise. Antes de
+consultas externas, e-mails, CPFs e telefones reconhecidos são mascarados na alegação de busca
+e no prompt enviado à IA. Os campos derivados são mascarados antes de serem gravados; a API
+repete essa proteção ao devolver resultados antigos. Links de fontes que contenham esses dados
+são omitidos para não apontarem a um endereço adulterado. A migração
+`analysis.0002_mask_legacy_analysis_data` limpa os registros anteriores ao executar
+`manage.py migrate`. O mascaramento é baseado em padrões e não detecta todos os dados pessoais;
+o prazo de retenção e a revisão das cópias de segurança ainda precisam ser definidos.
+
 ### Exemplo de Requisição por Link (POST `/api/v1/analyses/`)
 
 ```json

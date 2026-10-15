@@ -114,8 +114,10 @@ describe('RF05 e RF30: o conteúdo enviado', () => {
   it('hoje, descreve busca e possível síntese externa; com API anterior, não afirma esses envios', () => {
     const current = textOf(byId(CONFIGS['demonstração (padrão de hoje)'], 'conteudo'))
     expect(current).toMatch(/envia palavras do título ou da alegação a serviços de busca/)
-    expect(current).toMatch(/até 1\.200 caracteres do corpo/)
-    expect(current).toMatch(/campos derivados podem repetir trechos/)
+    expect(current).toMatch(/até 1\.600 caracteres do corpo/)
+    expect(current).toMatch(/mascarados antes dessas consultas/)
+    expect(current).toMatch(/mascarados antes de guardar esses campos/)
+    expect(current).toMatch(/podem repetir outros trechos/)
     expect(textOf(byId(CONFIGS['back end anterior'], 'conteudo'))).toMatch(/Ele não é enviado a outros serviços/)
   })
 

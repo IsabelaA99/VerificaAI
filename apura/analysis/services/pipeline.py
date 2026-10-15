@@ -19,7 +19,8 @@ from django.conf import settings
 from ..models import Analysis
 from . import factcheck, llm, risk
 from .classifier import get_classifier
-from .preprocessing import NewsInput, build_news_input, summarize_claim
+from .preprocessing import NewsInput, build_news_input, mask_pii, summarize_claim
+from .privacy import sanitize_analysis_data
 from .scraper import scrape_url
 from .timing import Deadline
 
@@ -97,7 +98,7 @@ def _execute_pipeline(
     ling = risk.linguistic_indicators(news.full_text, rules.linguistic)
 
     # 3. Busca de checagens na internet (Google Fact Check Tools / Agências de Checagem)
-    claim_query = news.title or summarize_claim(news)
+    claim_query = mask_pii(news.title or summarize_claim(news))
     stage_started = time.perf_counter()
     fact_res = factcheck.search_fact_checks(claim_query, deadline=deadline.child(8, reserve=2))
     logger.info("analysis stage=sources ms=%.1f", (time.perf_counter() - stage_started) * 1000)
@@ -261,7 +262,7 @@ def _execute_pipeline(
         model_label=cls.label,
         model_fake_probability=cls.fake_probability,
         model_confidence=cls.confidence,
-        technical=technical,
+        technical=sanitize_analysis_data(technical),
         model_version=cls.model_version,
         model_sha256=cls.model_sha256,
         rules_version=rules.version,

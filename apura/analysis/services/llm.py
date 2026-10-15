@@ -20,6 +20,7 @@ from typing import Any
 import requests
 from django.conf import settings
 
+from .preprocessing import mask_pii
 from .timing import Deadline, DeadlineExceeded, ServiceBusy
 
 logger = logging.getLogger(__name__)
@@ -64,14 +65,15 @@ def _build_prompt(
     sources: list[dict[str, Any]],
     source_domain: str = "",
 ) -> str:
-    body_snippet = body[:1600] + ("..." if len(body) > 1600 else "")
-    sensational = linguistic_indicators.get("sensational_terms") or []
+    safe_body = mask_pii(body)
+    body_snippet = safe_body[:1600] + ("..." if len(safe_body) > 1600 else "")
+    sensational = [mask_pii(term) for term in linguistic_indicators.get("sensational_terms") or []]
 
     sources_summary = []
     for s in sources[:4]:
         sources_summary.append(
-            f"- Veículo: {s.get('publisher')}, Relação: {s.get('relation')}, "
-            f"Título: {s.get('title')}, Resumo: {s.get('excerpt')}"
+            f"- Veículo: {mask_pii(str(s.get('publisher') or ''))}, Relação: {s.get('relation')}, "
+            f"Título: {mask_pii(str(s.get('title') or ''))}, Resumo: {mask_pii(str(s.get('excerpt') or ''))}"
         )
     sources_text = "\n".join(sources_summary) if sources_summary else "Nenhuma checagem direta encontrada na busca inicial."
 
@@ -94,7 +96,7 @@ def _build_prompt(
         "Sua missão é realizar uma AVALIAÇÃO ESPECIALISTA ESTRUTURADA, sem viés, com máxima calibração determinística e precisão factual.\n\n"
         f"{press_guidance}"
         f"--- CONTEÚDO AVALIADO ---\n"
-        f"Título: {title or 'Não informado'}\n"
+        f"Título: {mask_pii(title) or 'Não informado'}\n"
         f"Texto: {body_snippet}\n\n"
         f"--- ANÁLISE ESTATÍSTICA DO MODELO BERTIMBAU V4 ---\n"
         f"Classe indicada: {model_label}\n"
