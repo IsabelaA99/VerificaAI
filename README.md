@@ -330,11 +330,14 @@ Entrada (Texto, Link ou Extensão de Navegador)
 
 O texto integral é usado na análise local, mas não é salvo como campo da análise. Antes de
 consultas externas, e-mails, CPFs e telefones reconhecidos são mascarados na alegação de busca
-e no prompt enviado à IA. Os campos derivados são mascarados antes de serem gravados; a API
-repete essa proteção ao devolver resultados antigos. Links de fontes que contenham esses dados
+e no prompt enviado à IA. Os campos narrativos derivados são mascarados antes de serem gravados;
+a API repete essa proteção ao devolver resultados antigos. UUIDs, hashes, versões, datas e demais
+metadados estruturais são preservados. Links de fontes que contenham esses dados
 são omitidos para não apontarem a um endereço adulterado. A migração
 `analysis.0002_mask_legacy_analysis_data` limpa os registros anteriores ao executar
-`manage.py migrate`. O mascaramento é baseado em padrões e não detecta todos os dados pessoais;
+`manage.py migrate`. A migração `analysis.0003_restore_technical_metadata` repara cópias de hashes
+e versões que tenham sido mascaradas em `technical`, usando as colunas originais da análise.
+Textos e URLs já removidos não são reconstruídos. O mascaramento é baseado em padrões e não detecta todos os dados pessoais;
 o prazo de retenção e a revisão das cópias de segurança ainda precisam ser definidos.
 
 ### Exemplo de Requisição via Extensão (POST `/api/v1/analyses/`)

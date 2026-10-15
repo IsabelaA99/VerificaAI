@@ -28,6 +28,7 @@ regras de risco, abstenção e rastreabilidade de versões.
 - [x] Normalização Unicode/espaços, detecção de vazio/corrompido (RF04)
 - [x] Verificação heurística de idioma português (RF04)
 - [x] Mascaramento de CPF, telefone e e-mail antes de consultas externas e da persistência dos campos derivados; proteção da API e migração dos registros anteriores (RF05)
+- [x] T01: mascaramento restrito a campos narrativos; preservação de UUIDs, hashes e versões, com reparo dos metadados técnicos anteriores
 
 ### 1.4 Regras de decisão (`analysis/services/risk.py`, `rules/`)
 - [x] Indicadores linguísticos auxiliares (RF10)
